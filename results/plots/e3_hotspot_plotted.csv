@@ -1,0 +1,64 @@
+series,x_label,x_value,metric,mean,sd,min,max,n,cache_state
+pool (O_DIRECT),uniform,uniform,storage_hit_ratio,0.0723533333333333,0.0,0.0723533333333333,0.0723533333333333,5,warm
+pool (O_DIRECT),uniform,uniform,hit_ratio,0.07235333333,0.0,0.07235333333,0.07235333333,5,warm
+pool (O_DIRECT),uniform,uniform,p50_us,49.631,1.4838315268250641,47.673,51.533,5,warm
+pool (O_DIRECT),uniform,uniform,p99_us,187.13060000000002,17.78310928381198,170.974,215.874,5,warm
+pool (O_DIRECT),uniform,uniform,throughput_ops,17016.540082,939.3420984992608,15806.74943,18258.45146,5,warm
+pool (O_DIRECT),uniform,uniform,evictions,139147.0,0.0,139147.0,139147.0,5,warm
+pool (O_DIRECT),uniform,uniform,dev_read_kib,556588.0,0.0,556588.0,556588.0,5,warm
+pool (O_DIRECT),hotspot 80/20,hotspot 80/20,storage_hit_ratio,0.2253333333333333,0.0,0.2253333333333333,0.2253333333333333,5,warm
+pool (O_DIRECT),hotspot 80/20,hotspot 80/20,hit_ratio,0.2253333333,0.0,0.2253333333,0.2253333333,5,warm
+pool (O_DIRECT),hotspot 80/20,hotspot 80/20,p50_us,47.028400000000005,1.4289778864629077,44.539,48.081,5,warm
+pool (O_DIRECT),hotspot 80/20,hotspot 80/20,p99_us,177.13060000000002,15.60115507903182,156.593,188.574,5,warm
+pool (O_DIRECT),hotspot 80/20,hotspot 80/20,throughput_ops,20162.84986,1158.4101707724049,19270.52732,22094.06249,5,warm
+pool (O_DIRECT),hotspot 80/20,hotspot 80/20,evictions,116200.0,0.0,116200.0,116200.0,5,warm
+pool (O_DIRECT),hotspot 80/20,hotspot 80/20,dev_read_kib,464800.0,0.0,464800.0,464800.0,5,warm
+pool (O_DIRECT),hotspot 95/5,hotspot 95/5,storage_hit_ratio,0.9481266666666668,0.0,0.9481266666666668,0.9481266666666668,5,warm
+pool (O_DIRECT),hotspot 95/5,hotspot 95/5,hit_ratio,0.9481266667,0.0,0.9481266667,0.9481266667,5,warm
+pool (O_DIRECT),hotspot 95/5,hotspot 95/5,p50_us,1.7084,0.09790199180813434,1.584,1.828,5,warm
+pool (O_DIRECT),hotspot 95/5,hotspot 95/5,p99_us,79.9528,7.625985392065738,68.765,90.165,5,warm
+pool (O_DIRECT),hotspot 95/5,hotspot 95/5,throughput_ops,194725.06498,12022.169381811882,182647.8803,212848.0875,5,warm
+pool (O_DIRECT),hotspot 95/5,hotspot 95/5,evictions,7781.0,0.0,7781.0,7781.0,5,warm
+pool (O_DIRECT),hotspot 95/5,hotspot 95/5,dev_read_kib,31124.0,0.0,31124.0,31124.0,5,warm
+"os (buffered, tiny pool)",uniform,uniform,storage_hit_ratio,0.09589333333333327,0.009086980918997383,0.0866599999999999,0.1051733333333333,5,warm
+"os (buffered, tiny pool)",uniform,uniform,hit_ratio,0.00078,0.0,0.00078,0.00078,5,warm
+"os (buffered, tiny pool)",uniform,uniform,p50_us,48.8344,1.8399298356187397,47.165,51.801,5,warm
+"os (buffered, tiny pool)",uniform,uniform,p99_us,184.7144,26.950967650531584,158.786,228.13,5,warm
+"os (buffered, tiny pool)",uniform,uniform,throughput_ops,16907.23033,1330.4314089347558,14930.14339,18409.26897,5,warm
+"os (buffered, tiny pool)",uniform,uniform,evictions,149883.0,0.0,149883.0,149883.0,5,warm
+"os (buffered, tiny pool)",uniform,uniform,dev_read_kib,542464.0,5452.18855139842,536896.0,548004.0,5,warm
+"os (buffered, tiny pool)",hotspot 80/20,hotspot 80/20,storage_hit_ratio,0.222356,0.047464249610745045,0.1690866666666667,0.2745066666666667,5,warm
+"os (buffered, tiny pool)",hotspot 80/20,hotspot 80/20,hit_ratio,0.00268,0.0,0.00268,0.00268,5,warm
+"os (buffered, tiny pool)",hotspot 80/20,hotspot 80/20,p50_us,29.7494,15.427438568991288,13.061,44.163,5,warm
+"os (buffered, tiny pool)",hotspot 80/20,hotspot 80/20,p99_us,172.2602,18.720543707382006,157.066,204.93,5,warm
+"os (buffered, tiny pool)",hotspot 80/20,hotspot 80/20,throughput_ops,22450.787624,3010.359412328061,18546.26275,26907.32244,5,warm
+"os (buffered, tiny pool)",hotspot 80/20,hotspot 80/20,evictions,149598.0,0.0,149598.0,149598.0,5,warm
+"os (buffered, tiny pool)",hotspot 80/20,hotspot 80/20,dev_read_kib,466586.4,28478.549766447028,435296.0,498548.0,5,warm
+"os (buffered, tiny pool)",hotspot 95/5,hotspot 95/5,storage_hit_ratio,0.9533466666666668,0.0005189947548440181,0.9528666666666666,0.9540266666666668,5,warm
+"os (buffered, tiny pool)",hotspot 95/5,hotspot 95/5,hit_ratio,0.01657333333,0.0,0.01657333333,0.01657333333,5,warm
+"os (buffered, tiny pool)",hotspot 95/5,hotspot 95/5,p50_us,4.5920000000000005,0.18382872463246858,4.36,4.851,5,warm
+"os (buffered, tiny pool)",hotspot 95/5,hotspot 95/5,p99_us,136.0828,17.585446204176908,120.018,161.583,5,warm
+"os (buffered, tiny pool)",hotspot 95/5,hotspot 95/5,throughput_ops,94044.819444,12371.163988575547,75668.1411,107879.4048,5,warm
+"os (buffered, tiny pool)",hotspot 95/5,hotspot 95/5,evictions,147514.0,0.0,147514.0,147514.0,5,warm
+"os (buffered, tiny pool)",hotspot 95/5,hotspot 95/5,dev_read_kib,27992.0,311.39685290638374,27584.0,28280.0,5,warm
+"pool, equal data capacity",uniform,uniform,storage_hit_ratio,0.14602,0.0,0.14602,0.14602,5,warm
+"pool, equal data capacity",uniform,uniform,hit_ratio,0.14602,0.0,0.14602,0.14602,5,warm
+"pool, equal data capacity",uniform,uniform,p50_us,48.992999999999995,1.6196664780132968,46.491,50.803,5,warm
+"pool, equal data capacity",uniform,uniform,p99_us,193.0116,8.157000386171374,183.542,203.198,5,warm
+"pool, equal data capacity",uniform,uniform,throughput_ops,17897.367404,638.936325246825,17066.49366,18488.5669,5,warm
+"pool, equal data capacity",uniform,uniform,evictions,128097.0,0.0,128097.0,128097.0,5,warm
+"pool, equal data capacity",uniform,uniform,dev_read_kib,512388.0,0.0,512388.0,512388.0,5,warm
+"pool, equal data capacity",hotspot 80/20,hotspot 80/20,storage_hit_ratio,0.4276466666666666,0.0,0.4276466666666666,0.4276466666666666,5,warm
+"pool, equal data capacity",hotspot 80/20,hotspot 80/20,hit_ratio,0.4276466667,0.0,0.4276466667,0.4276466667,5,warm
+"pool, equal data capacity",hotspot 80/20,hotspot 80/20,p50_us,42.8774,1.2077598271179568,40.966,44.046,5,warm
+"pool, equal data capacity",hotspot 80/20,hotspot 80/20,p99_us,155.4498,5.6504288952255655,149.326,161.989,5,warm
+"pool, equal data capacity",hotspot 80/20,hotspot 80/20,throughput_ops,26133.555586000002,841.7266465689563,24663.64711,26742.08737,5,warm
+"pool, equal data capacity",hotspot 80/20,hotspot 80/20,evictions,85853.0,0.0,85853.0,85853.0,5,warm
+"pool, equal data capacity",hotspot 80/20,hotspot 80/20,dev_read_kib,343412.0,0.0,343412.0,343412.0,5,warm
+"pool, equal data capacity",hotspot 95/5,hotspot 95/5,storage_hit_ratio,0.9547799999999999,1.2412670766236366e-16,0.95478,0.95478,5,warm
+"pool, equal data capacity",hotspot 95/5,hotspot 95/5,hit_ratio,0.9547799999999999,1.2412670766236366e-16,0.95478,0.95478,5,warm
+"pool, equal data capacity",hotspot 95/5,hotspot 95/5,p50_us,1.6854,0.13888052419255917,1.523,1.836,5,warm
+"pool, equal data capacity",hotspot 95/5,hotspot 95/5,p99_us,76.75319999999999,17.54671612296728,56.924,101.014,5,warm
+"pool, equal data capacity",hotspot 95/5,hotspot 95/5,throughput_ops,205795.50310000003,35165.21475341956,162985.7349,253288.7612,5,warm
+"pool, equal data capacity",hotspot 95/5,hotspot 95/5,evictions,6783.0,0.0,6783.0,6783.0,5,warm
+"pool, equal data capacity",hotspot 95/5,hotspot 95/5,dev_read_kib,27132.0,0.0,27132.0,27132.0,5,warm

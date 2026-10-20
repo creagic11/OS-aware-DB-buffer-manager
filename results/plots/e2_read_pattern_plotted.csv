@@ -1,0 +1,37 @@
+series,x_label,x_value,metric,mean,sd,min,max,n,cache_state
+pool (O_DIRECT),sequential,sequential,throughput_ops,362449.51788000006,34827.74755054703,307623.202,404487.4365,5,cold
+pool (O_DIRECT),sequential,sequential,io_iops,10660.848485999999,1024.400148920859,9048.22378,11897.3238,5,cold
+pool (O_DIRECT),sequential,sequential,p99_us,55.81080000000001,5.897922871655749,47.334,62.777,5,cold
+pool (O_DIRECT),sequential,sequential,hit_ratio,0.9705866667,0.0,0.9705866667,0.9705866667,5,cold
+pool (O_DIRECT),sequential,sequential,dev_reads,4412.0,0.0,4412.0,4412.0,5,cold
+pool (O_DIRECT),sequential,sequential,minor_faults,39.6,53.77080992508854,0.0,99.0,5,cold
+pool (O_DIRECT),uniform,uniform,throughput_ops,25036.348344,1220.3840624536583,23101.65791,26488.5384,5,cold
+pool (O_DIRECT),uniform,uniform,io_iops,18841.688126,918.4285012910944,17385.6917,19934.56764,5,cold
+pool (O_DIRECT),uniform,uniform,p99_us,128.5266,10.156806156464743,118.445,143.798,5,cold
+pool (O_DIRECT),uniform,uniform,hit_ratio,0.24742666669999996,3.1031676915590914e-17,0.2474266667,0.2474266667,5,cold
+pool (O_DIRECT),uniform,uniform,dev_reads,112886.0,0.0,112886.0,112886.0,5,cold
+pool (O_DIRECT),uniform,uniform,minor_faults,39.6,54.224533193011446,0.0,99.0,5,cold
+double (buffered + pool),sequential,sequential,throughput_ops,850523.2215600001,69275.51013085783,741394.8121,930427.899,5,cold
+double (buffered + pool),sequential,sequential,io_iops,25016.723022,2037.623669432429,21806.89274,27366.98593,5,cold
+double (buffered + pool),sequential,sequential,p99_us,5.62,0.4889514290806398,5.121,6.386,5,cold
+double (buffered + pool),sequential,sequential,hit_ratio,0.9705866667,0.0,0.9705866667,0.9705866667,5,cold
+double (buffered + pool),sequential,sequential,dev_reads,145.0,0.0,145.0,145.0,5,cold
+double (buffered + pool),sequential,sequential,minor_faults,39.4,53.951830367467615,0.0,99.0,5,cold
+double (buffered + pool),uniform,uniform,throughput_ops,102941.10270399999,9893.26792882902,85293.35822,108621.909,5,cold
+double (buffered + pool),uniform,uniform,io_iops,77470.72879,7445.409621890425,64189.5069,81745.95213,5,cold
+double (buffered + pool),uniform,uniform,p99_us,72.10240000000002,7.229276505985919,67.507,84.809,5,cold
+double (buffered + pool),uniform,uniform,hit_ratio,0.24742666669999996,3.1031676915590914e-17,0.2474266667,0.2474266667,5,cold
+double (buffered + pool),uniform,uniform,dev_reads,14829.0,0.0,14829.0,14829.0,5,cold
+double (buffered + pool),uniform,uniform,minor_faults,39.6,54.224533193011446,0.0,99.0,5,cold
+"os (buffered, tiny pool)",sequential,sequential,throughput_ops,720346.36796,176297.83786540898,411669.2874,843347.9924,5,cold
+"os (buffered, tiny pool)",sequential,sequential,io_iops,21187.787835999996,5185.507073053524,12108.56597,24805.67562,5,cold
+"os (buffered, tiny pool)",sequential,sequential,p99_us,5.2384,0.39133080635186396,4.903,5.7,5,cold
+"os (buffered, tiny pool)",sequential,sequential,hit_ratio,0.9705866667,0.0,0.9705866667,0.9705866667,5,cold
+"os (buffered, tiny pool)",sequential,sequential,dev_reads,145.0,0.0,145.0,145.0,5,cold
+"os (buffered, tiny pool)",sequential,sequential,minor_faults,58.0,78.96518220076491,0.0,145.0,5,cold
+"os (buffered, tiny pool)",uniform,uniform,throughput_ops,99793.980804,5523.858958380625,94341.4175,108260.6065,5,cold
+"os (buffered, tiny pool)",uniform,uniform,io_iops,99716.14151999999,5519.550377206698,94267.8312,108176.1633,5,cold
+"os (buffered, tiny pool)",uniform,uniform,p99_us,73.049,4.477250774750059,66.708,78.473,5,cold
+"os (buffered, tiny pool)",uniform,uniform,hit_ratio,0.00078,0.0,0.00078,0.00078,5,cold
+"os (buffered, tiny pool)",uniform,uniform,dev_reads,14829.0,0.0,14829.0,14829.0,5,cold
+"os (buffered, tiny pool)",uniform,uniform,minor_faults,58.0,78.96518220076491,0.0,145.0,5,cold

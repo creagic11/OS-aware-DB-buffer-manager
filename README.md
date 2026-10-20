@@ -141,7 +141,28 @@ page-cache residency of the data file (`mincore`).
 
 ## Results
 
-RESULTS_PLACEHOLDER
+Measured on a 2-vCPU cloud VM with a virtio disk, 3–5 repetitions per point (full tables with ±sd and min–max:
+[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md); answer to the research question: [docs/DESIGN_REPORT.md](docs/DESIGN_REPORT.md)).
+
+| Experiment | Result |
+|---|---|
+| (a) Working-set sweep | Pool hit ratio = min(1, pool/WS) (0.249 / 0.499 / 1.00). Below 1×, O_DIRECT is device-bound (22k op/s at 0.25×), while buffered + pool gets 202k op/s because the page cache absorbs the misses |
+| (b) Sequential vs random, cold | Readahead: 145 device reads instead of 4,412 for a scan, so buffered is 2.3× faster than O_DIRECT (851k vs 362k op/s) |
+| (c) Hotspot, 10 MiB budget | Equal data capacity, 80/20: CLOCK storage-hit 0.428 vs OS page cache 0.222. 95/5 (fits): pool 195k vs OS 94k op/s, p99 80 vs 136 µs |
+| (d) Read/write + WAL | fdatasync per commit (0.28–0.36 ms) costs 2.3–4.4× throughput; group commit (64) recovers 3.5× |
+| (e) I/O mode | Data fits and is warm: buffered and O_DIRECT are indistinguishable (607k vs 612k op/s). 256 MiB data with a 64 MiB budget: the OS wins at equal memory (44.6k vs 36.9k op/s) |
+| (f) Budget sweep 8–512 MiB | Equal memory: OS wins 32–256 MiB (canonical 8 KiB frames), pool wins 2.2× once everything fits. Equal data capacity: pool ≥ OS from 64 MiB, 2.7× at 256 MiB |
+| extra: CLOCK vs LRU | Hit ratio within 0.9 pp; CLOCK 1.6× faster (LRU's O(N) victim scan) |
+
+![Memory-budget sweep](results/plots/e6_memory_budget.png)
+
+**When the custom buffer manager wins:** when the hot set fits in its memory, a pool hit (hash lookup + pin) is 2–2.8× cheaper
+than a page-cache hit (syscall + copy + checksum). For skewed workloads larger than memory, CLOCK at equal data capacity
+keeps the hot set better than the cgroup-limited kernel LRU.
+**When it loses:** at equal memory with the spec's canonical 8 KiB `Frame` (half the data per byte), on cold sequential scans
+(no readahead with O_DIRECT), and whenever the OS may cache the dataset anyway (double caching absorbs pool misses).
+**What O_DIRECT costs:** synchronous device reads on every miss, no readahead, synchronous write-back at eviction, and
+4 KiB alignment discipline. **What it buys:** no double caching, zero page-cache system CPU, and predictable memory.
 
 ---
 

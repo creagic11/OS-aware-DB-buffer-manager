@@ -1,0 +1,51 @@
+series,x_label,x_value,metric,mean,sd,min,max,n,cache_state
+pool (O_DIRECT),0.25,0.25,hit_ratio,0.24901,0.0,0.24901,0.24901,5,warm
+pool (O_DIRECT),0.25,0.25,p99_us,156.91720000000004,6.019210637616862,146.979,162.163,5,warm
+pool (O_DIRECT),0.25,0.25,throughput_ops,22250.382484,427.77242935106653,21723.92017,22854.80038,5,warm
+pool (O_DIRECT),0.25,0.25,dev_reads,150198.4,0.8944271909999159,150198.0,150200.0,5,warm
+pool (O_DIRECT),0.25,0.25,cpu_util,0.48564980581999995,0.007634541708546316,0.473389203,0.4933475177,5,warm
+pool (O_DIRECT),0.5,0.5,hit_ratio,0.49929000000000007,6.206335383118183e-17,0.49929,0.49929,5,warm
+pool (O_DIRECT),0.5,0.5,p99_us,143.7326,4.006391556001486,138.636,148.326,5,warm
+pool (O_DIRECT),0.5,0.5,throughput_ops,30970.815636000003,1083.0060770524517,29409.09142,32161.46404,5,warm
+pool (O_DIRECT),0.5,0.5,dev_reads,100142.2,0.4472135954999579,100142.0,100143.0,5,warm
+pool (O_DIRECT),0.5,0.5,cpu_util,0.50110192032,0.013465104172347838,0.4834606122,0.5192219117,5,warm
+pool (O_DIRECT),1.0,1.0,hit_ratio,1.0,0.0,1.0,1.0,5,warm
+pool (O_DIRECT),1.0,1.0,p99_us,2.9424,0.1979401424673631,2.761,3.205,5,warm
+pool (O_DIRECT),1.0,1.0,throughput_ops,594748.37408,39595.70985390838,539395.3241,637141.5628,5,warm
+pool (O_DIRECT),1.0,1.0,dev_reads,0.0,0.0,0.0,0.0,5,warm
+pool (O_DIRECT),1.0,1.0,cpu_util,0.9896243304400001,0.01774186778950142,0.9580793686,1.000219521,5,warm
+pool (O_DIRECT),2.0,2.0,hit_ratio,1.0,0.0,1.0,1.0,5,warm
+pool (O_DIRECT),2.0,2.0,p99_us,3.7116,0.8037495256608242,2.997,5.058,5,warm
+pool (O_DIRECT),2.0,2.0,throughput_ops,574212.4016000001,38214.21159728196,529195.5141,622918.0599,5,warm
+pool (O_DIRECT),2.0,2.0,dev_reads,0.0,0.0,0.0,0.0,5,warm
+pool (O_DIRECT),2.0,2.0,cpu_util,0.98318569064,0.023150344981890142,0.9552137788,1.000166581,5,warm
+pool (O_DIRECT),4.0,4.0,hit_ratio,1.0,0.0,1.0,1.0,5,warm
+pool (O_DIRECT),4.0,4.0,p99_us,2.4919999999999995,0.12078286302286431,2.331,2.61,5,warm
+pool (O_DIRECT),4.0,4.0,throughput_ops,690238.2474999999,18179.05929300068,665569.3181,706671.1085,5,warm
+pool (O_DIRECT),4.0,4.0,dev_reads,0.0,0.0,0.0,0.0,5,warm
+pool (O_DIRECT),4.0,4.0,cpu_util,0.9903030808800001,0.00831893482490488,0.9811956002,0.9996572572,5,warm
+double (buffered + pool),0.25,0.25,hit_ratio,0.24901,0.0,0.24901,0.24901,5,warm
+double (buffered + pool),0.25,0.25,p99_us,15.517199999999999,1.1226663351147574,14.427,17.158,5,warm
+double (buffered + pool),0.25,0.25,throughput_ops,202477.21774000002,5553.293993135648,194116.0909,209419.545,5,warm
+double (buffered + pool),0.25,0.25,dev_reads,0.2,0.447213595499958,0.0,1.0,5,warm
+double (buffered + pool),0.25,0.25,cpu_util,0.9761012002599999,0.006685788335185722,0.9666952208,0.9828817757,5,warm
+double (buffered + pool),0.5,0.5,hit_ratio,0.49929000000000007,6.206335383118183e-17,0.49929,0.49929,5,warm
+double (buffered + pool),0.5,0.5,p99_us,18.4404,5.4631832570398,15.15,28.09,5,warm
+double (buffered + pool),0.5,0.5,throughput_ops,221316.99688,9907.9134820571,206593.1137,229988.0281,5,warm
+double (buffered + pool),0.5,0.5,dev_reads,0.0,0.0,0.0,0.0,5,warm
+double (buffered + pool),0.5,0.5,cpu_util,0.98196792304,0.015118214691663178,0.9583387321,0.993424088,5,warm
+double (buffered + pool),1.0,1.0,hit_ratio,1.0,0.0,1.0,1.0,5,warm
+double (buffered + pool),1.0,1.0,p99_us,4.005000000000001,0.8474809732377476,2.967,5.106,5,warm
+double (buffered + pool),1.0,1.0,throughput_ops,561967.92174,33854.46715486468,510051.5268,601403.6044,5,warm
+double (buffered + pool),1.0,1.0,dev_reads,0.0,0.0,0.0,0.0,5,warm
+double (buffered + pool),1.0,1.0,cpu_util,0.9823805700999999,0.01533465779435107,0.9600235808,0.9994842206,5,warm
+double (buffered + pool),2.0,2.0,hit_ratio,1.0,0.0,1.0,1.0,5,warm
+double (buffered + pool),2.0,2.0,p99_us,2.8594,0.31832184970560834,2.619,3.404,5,warm
+double (buffered + pool),2.0,2.0,throughput_ops,605867.3544,55299.07461101692,529034.9358,666615.044,5,warm
+double (buffered + pool),2.0,2.0,dev_reads,0.0,0.0,0.0,0.0,5,warm
+double (buffered + pool),2.0,2.0,cpu_util,0.9808153792799998,0.011647501837810808,0.963689892,0.99141676,5,warm
+double (buffered + pool),4.0,4.0,hit_ratio,1.0,0.0,1.0,1.0,5,warm
+double (buffered + pool),4.0,4.0,p99_us,3.3308,0.5032615622119377,2.571,3.874,5,warm
+double (buffered + pool),4.0,4.0,throughput_ops,615817.23576,45553.59226137569,540537.6698,656983.6647,5,warm
+double (buffered + pool),4.0,4.0,dev_reads,0.0,0.0,0.0,0.0,5,warm
+double (buffered + pool),4.0,4.0,cpu_util,0.98577006472,0.01036307694997187,0.970721976,0.9965401374,5,warm

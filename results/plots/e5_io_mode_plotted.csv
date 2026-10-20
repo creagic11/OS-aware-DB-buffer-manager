@@ -1,0 +1,64 @@
+series,x_label,x_value,metric,mean,sd,min,max,n,cache_state
+"os (buffered, tiny pool)","fits in RAM, warm","fits in RAM, warm",throughput_ops,216785.07766,10503.837272184997,198161.4329,222823.082,5,warm
+"os (buffered, tiny pool)","fits in RAM, warm","fits in RAM, warm",p50_us,4.2374,0.07734532952932584,4.16,4.357,5,warm
+"os (buffered, tiny pool)","fits in RAM, warm","fits in RAM, warm",p99_us,14.177200000000003,2.905945835696185,12.478,19.358,5,warm
+"os (buffered, tiny pool)","fits in RAM, warm","fits in RAM, warm",cpu_util,0.9785923383,0.008479784890312177,0.9672329349,0.9891905065,5,warm
+"os (buffered, tiny pool)","fits in RAM, warm","fits in RAM, warm",cpu_sys_s,0.16935660000000002,0.033569047324879496,0.144043,0.227784,5,warm
+"os (buffered, tiny pool)","fits in RAM, warm","fits in RAM, warm",dev_util_pct,0.0,0.0,0.0,0.0,5,warm
+"os (buffered, tiny pool)","fits in RAM, warm","fits in RAM, warm",storage_hit_ratio,1.0,0.0,1.0,1.0,5,warm
+"os (buffered, tiny pool)","fits in RAM, cold","fits in RAM, cold",throughput_ops,100204.74398800002,2115.711539074614,97064.56809,101905.9802,5,cold
+"os (buffered, tiny pool)","fits in RAM, cold","fits in RAM, cold",p50_us,4.8358,0.2560482376428316,4.647,5.253,5,cold
+"os (buffered, tiny pool)","fits in RAM, cold","fits in RAM, cold",p99_us,83.2896,1.588471686873893,81.052,85.428,5,cold
+"os (buffered, tiny pool)","fits in RAM, cold","fits in RAM, cold",cpu_util,0.7075924786399999,0.022580740761844954,0.6835901627,0.7366669957,5,cold
+"os (buffered, tiny pool)","fits in RAM, cold","fits in RAM, cold",cpu_sys_s,0.4765414,0.027378984765692095,0.450465,0.517783,5,cold
+"os (buffered, tiny pool)","fits in RAM, cold","fits in RAM, cold",dev_util_pct,36.266368442,4.700145671469911,30.30163279,43.22608766,5,cold
+"os (buffered, tiny pool)","fits in RAM, cold","fits in RAM, cold",storage_hit_ratio,0.8824866666666666,0.0,0.8824866666666666,0.8824866666666666,5,cold
+"os (buffered, tiny pool)","256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",throughput_ops,44573.929572,1964.1504301643583,41721.93236,46716.97768,5,warm
+"os (buffered, tiny pool)","256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",p50_us,6.1212,0.09516669585522045,6.012,6.255,5,warm
+"os (buffered, tiny pool)","256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",p99_us,128.9934,6.235727808363675,123.269,136.931,5,warm
+"os (buffered, tiny pool)","256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",cpu_util,0.57058813662,0.01431662715668834,0.5537293141,0.5898532318,5,warm
+"os (buffered, tiny pool)","256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",cpu_sys_s,1.235487,0.04616393788987243,1.191629,1.295822,5,warm
+"os (buffered, tiny pool)","256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",dev_util_pct,51.234446692000006,1.8524693189221917,49.00851649,53.40407342,5,warm
+"os (buffered, tiny pool)","256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",storage_hit_ratio,0.6407746666666667,0.005434188889695427,0.6351533333333333,0.6482933333333334,5,warm
+pool (O_DIRECT),"fits in RAM, warm","fits in RAM, warm",throughput_ops,612124.61294,72521.57654792379,559207.6162,734566.8928,5,warm
+pool (O_DIRECT),"fits in RAM, warm","fits in RAM, warm",p50_us,1.532,0.16085086260259848,1.257,1.657,5,warm
+pool (O_DIRECT),"fits in RAM, warm","fits in RAM, warm",p99_us,4.6272,1.2922003327657827,2.934,5.739,5,warm
+pool (O_DIRECT),"fits in RAM, warm","fits in RAM, warm",cpu_util,0.9874624403800001,0.007596559781297077,0.9781468826,0.9955340243,5,warm
+pool (O_DIRECT),"fits in RAM, warm","fits in RAM, warm",cpu_sys_s,0.0,0.0,0.0,0.0,5,warm
+pool (O_DIRECT),"fits in RAM, warm","fits in RAM, warm",dev_util_pct,0.0,0.0,0.0,0.0,5,warm
+pool (O_DIRECT),"fits in RAM, warm","fits in RAM, warm",storage_hit_ratio,1.0,0.0,1.0,1.0,5,warm
+pool (O_DIRECT),"fits in RAM, cold","fits in RAM, cold",throughput_ops,120934.88678000002,13209.321741568037,101323.5486,134559.5751,5,cold
+pool (O_DIRECT),"fits in RAM, cold","fits in RAM, cold",p50_us,2.2488,0.11731453447889573,2.105,2.378,5,cold
+pool (O_DIRECT),"fits in RAM, cold","fits in RAM, cold",p99_us,80.1274,10.24611322892735,66.898,93.521,5,cold
+pool (O_DIRECT),"fits in RAM, cold","fits in RAM, cold",cpu_util,0.56150637246,0.034971314919710283,0.5202997994,0.5978813835,5,cold
+pool (O_DIRECT),"fits in RAM, cold","fits in RAM, cold",cpu_sys_s,0.33267300000000005,0.03915254555581284,0.285909,0.385831,5,cold
+pool (O_DIRECT),"fits in RAM, cold","fits in RAM, cold",dev_util_pct,49.620030298,3.314575092255865,45.12275363,54.40361871,5,cold
+pool (O_DIRECT),"fits in RAM, cold","fits in RAM, cold",storage_hit_ratio,0.8896599999999999,1.2412670766236366e-16,0.88966,0.88966,5,cold
+pool (O_DIRECT),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",throughput_ops,36885.650134,5128.020071379391,27886.99456,40387.35199,5,warm
+pool (O_DIRECT),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",p50_us,4.018,0.3042671523513504,3.801,4.552,5,warm
+pool (O_DIRECT),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",p99_us,140.683,28.272326938191693,124.085,190.736,5,warm
+pool (O_DIRECT),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",cpu_util,0.51377759184,0.03659706592196194,0.451228862,0.5425817263,5,warm
+pool (O_DIRECT),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",cpu_sys_s,1.3957356,0.1781381687645856,1.260037,1.706689,5,warm
+pool (O_DIRECT),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",dev_util_pct,60.37876109,1.3618759482111056,58.57148088,62.35807147,5,warm
+pool (O_DIRECT),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",storage_hit_ratio,0.57778,0.0,0.57778,0.57778,5,warm
+double (buffered + pool),"fits in RAM, warm","fits in RAM, warm",throughput_ops,607246.81872,56516.06062774437,508267.7733,651626.0146,5,warm
+double (buffered + pool),"fits in RAM, warm","fits in RAM, warm",p50_us,1.5597999999999999,0.18019628187063133,1.401,1.87,5,warm
+double (buffered + pool),"fits in RAM, warm","fits in RAM, warm",p99_us,3.6104,0.6213692943813685,3.239,4.717,5,warm
+double (buffered + pool),"fits in RAM, warm","fits in RAM, warm",cpu_util,0.98187376794,0.01814129059826377,0.9590762007,1.000782634,5,warm
+double (buffered + pool),"fits in RAM, warm","fits in RAM, warm",cpu_sys_s,0.0001158,0.00018563189381138145,0.0,0.000426,5,warm
+double (buffered + pool),"fits in RAM, warm","fits in RAM, warm",dev_util_pct,0.0,0.0,0.0,0.0,5,warm
+double (buffered + pool),"fits in RAM, warm","fits in RAM, warm",storage_hit_ratio,1.0,0.0,1.0,1.0,5,warm
+double (buffered + pool),"fits in RAM, cold","fits in RAM, cold",throughput_ops,147211.6298,13929.343263055207,130269.5924,162642.219,5,cold
+double (buffered + pool),"fits in RAM, cold","fits in RAM, cold",p50_us,2.2064,0.11701837462552622,2.109,2.395,5,cold
+double (buffered + pool),"fits in RAM, cold","fits in RAM, cold",p99_us,73.37480000000001,7.480471188367748,65.968,85.151,5,cold
+double (buffered + pool),"fits in RAM, cold","fits in RAM, cold",cpu_util,0.6248321328600001,0.02771458767280418,0.5852640883,0.6529174298,5,cold
+double (buffered + pool),"fits in RAM, cold","fits in RAM, cold",cpu_sys_s,0.2982244,0.04710326896086938,0.240051,0.365099,5,cold
+double (buffered + pool),"fits in RAM, cold","fits in RAM, cold",dev_util_pct,47.339819888,3.925832501979324,42.50383324,52.79376529,5,cold
+double (buffered + pool),"fits in RAM, cold","fits in RAM, cold",storage_hit_ratio,0.8824866666666666,0.0,0.8824866666666666,0.8824866666666666,5,cold
+double (buffered + pool),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",throughput_ops,37350.665358,1278.770873316531,35551.35347,38627.40831,5,warm
+double (buffered + pool),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",p50_us,6.0908,0.1540704384364504,5.917,6.282,5,warm
+double (buffered + pool),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",p99_us,142.956,9.477845113737612,134.665,155.319,5,warm
+double (buffered + pool),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",cpu_util,0.52949915064,0.014706908544269533,0.505513233,0.5454857719,5,warm
+double (buffered + pool),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",cpu_sys_s,1.4138363999999999,0.09149747683023839,1.276131,1.50876,5,warm
+double (buffered + pool),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",dev_util_pct,52.101526725999996,3.0126801760409516,47.89727281,55.21144227,5,warm
+double (buffered + pool),"256 MiB data, 64 MiB budget","256 MiB data, 64 MiB budget",storage_hit_ratio,0.6011666666666666,0.0030713406410447443,0.5977666666666667,0.6043933333333333,5,warm
