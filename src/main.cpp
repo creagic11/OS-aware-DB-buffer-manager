@@ -8,6 +8,7 @@
  *   bufferscope [...] stats
  */
 
+#include "bufferscope/config_file.hpp"
 #include "bufferscope/kv_store.hpp"
 
 #include <filesystem>
@@ -18,9 +19,9 @@
 using namespace bufferscope;
 
 static int usage() {
-    std::cerr << "usage: bufferscope [--db PATH] [--io-mode=buffered|direct] [--pool N]\n"
+    std::cerr << "usage: bufferscope [--config FILE] [--db PATH] [--io-mode=buffered|direct] [--pool N]\n"
                  "                   [--durability=sync|group|off]\n"
-                 "                   (put KEY VALUE | get KEY | del KEY | stats)\n";
+                 "                   (put KEY VALUE | get KEY | del KEY | checkpoint | stats)\n";
     return 2;
 }
 
@@ -29,22 +30,30 @@ int main(int argc, char** argv) {
     IOMode mode = IOMode::BUFFERED;
     size_t pool = 128;
     Durability durability = Durability::SYNC;
+    unsigned long group = 64;
     std::vector<std::string> cmd;
 
     try {
-        for (int i = 1; i < argc; ++i) {
-            std::string a = argv[i];
+        const ExpandedArgs args = expand_config_args(argc, argv);
+        for (size_t i = 0; i < args.size(); ++i) {
+            std::string a = args[i];
             auto value = [&](const std::string& flag) -> std::string {
                 if (a.rfind(flag + "=", 0) == 0) return a.substr(flag.size() + 1);
-                if (i + 1 >= argc) throw std::invalid_argument(flag + " needs a value");
-                return argv[++i];
+                if (i + 1 >= args.size()) throw std::invalid_argument(flag + " needs a value");
+                return args[++i];
             };
             if (a == "--db" || a.rfind("--db=", 0) == 0) db = value("--db");
             else if (a == "--io-mode" || a.rfind("--io-mode=", 0) == 0) mode = parse_io_mode(value("--io-mode"));
             else if (a == "--pool" || a.rfind("--pool=", 0) == 0) pool = std::stoul(value("--pool"));
+            else if (a == "--pool-mb" || a.rfind("--pool-mb=", 0) == 0)
+                pool = static_cast<size_t>(std::stod(value("--pool-mb")) * 256.0);
             else if (a == "--durability" || a.rfind("--durability=", 0) == 0) durability = parse_durability(value("--durability"));
+            else if (a == "--group-commit" || a.rfind("--group-commit=", 0) == 0) group = std::stoul(value("--group-commit"));
             else if (a == "-h" || a == "--help") return usage();
-            else cmd.push_back(a);
+            else if (a.rfind("--", 0) == 0) {
+                if (i < args.from_files) continue;  // workload-only key in a shared config file
+                throw std::invalid_argument("unknown option " + a);
+            } else cmd.push_back(a);
         }
         if (cmd.empty()) return usage();
 
@@ -54,6 +63,7 @@ int main(int argc, char** argv) {
         o.pool_size = pool;
         o.io_mode = mode;
         o.durability = durability;
+        o.group_commit_ops = static_cast<uint32_t>(group);
         KVStore store(db, o);
 
         if (cmd[0] == "put" && cmd.size() == 3) {
@@ -69,6 +79,9 @@ int main(int argc, char** argv) {
             store.flush();
             std::cout << (ok ? "DELETED\n" : "(not found)\n");
             return ok ? 0 : 1;
+        } else if (cmd[0] == "checkpoint" && cmd.size() == 1) {
+            store.checkpoint();
+            std::cout << "CHECKPOINTED\n";
         } else if (cmd[0] == "stats" && cmd.size() == 1) {
             const auto& m = store.buffer_pool().metrics();
             std::cout << "db=" << db << " io_mode=" << io_mode_name(mode) << " pool_frames=" << pool

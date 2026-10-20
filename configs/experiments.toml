@@ -1,0 +1,148 @@
+# BufferScope comparative experiment matrix (Phase 8).
+#
+# Consumed by scripts/run_experiments.py. Every key under [defaults], `base` and a
+# series maps 1:1 onto a bench_runner flag (see `bench_runner --help`), except the
+# computed keys:
+#   pool_ratio      buffer pool = ratio × data pages (data pages derived from keys/value_size)
+#   pool_mib        buffer pool size in MiB
+#   sweep values may be plain values of `var`, or tables of parameters with a `label`.
+#   mem_budget_mib  run inside a memory cgroup capped at (calibrated base RSS + budget);
+#                   with budget_use = "pool" the pool gets the whole budget (O_DIRECT),
+#                   with "os" the pool is tiny and the OS page cache gets the budget,
+#                   with "split" the pool gets half and the page cache the rest;
+#                   with "pool_capacity" the pool holds budget/4 KiB pages (same DATA
+#                   capacity as the page cache) and the cgroup allows its real 8 KiB/frame
+#                   footprint — isolates the replacement policy from the Frame layout cost.
+#
+# Configuration names used throughout the report:
+#   os     = buffered I/O + tiny pool (16 frames): the OS page cache does the caching
+#   pool   = O_DIRECT + custom buffer pool: only the database caches
+#   double = buffered I/O + custom buffer pool: both cache (double buffering)
+
+[defaults]
+runs = 5
+value_size = 100
+seed = 42
+cache = "warm"
+durability = "off"
+io_mode = "buffered"
+replacer = "clock"
+read_pct = 90
+
+# ─────────────────────────────────────────────────────────────────────────────
+[[experiment]]
+id = "e1_working_set"
+title = "(a) Working-set sweep"
+question = "How do hit ratio and p99 scale as the buffer pool goes from 0.25x to 4x the working set?"
+x_label = "buffer pool / working set"
+metrics = ["hit_ratio", "p99_us", "throughput_ops", "dev_reads", "cpu_util"]
+base = { pattern = "uniform", keys = 150000, ops = 200000, warmup_ops = 200000 }
+sweep = { var = "pool_ratio", values = [0.25, 0.5, 1.0, 2.0, 4.0] }
+series = [
+  { name = "pool (O_DIRECT)", io_mode = "direct" },
+  { name = "double (buffered + pool)", io_mode = "buffered" },
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[[experiment]]
+id = "e2_read_pattern"
+title = "(b) Read pattern: sequential vs random"
+question = "What do sequential and random reads cost on each path from a cold cache?"
+x_label = "access pattern"
+metrics = ["throughput_ops", "io_iops", "p99_us", "hit_ratio", "dev_reads", "minor_faults"]
+base = { keys = 600000, ops = 150000, read_pct = 100, cache = "cold", pool_ratio = 0.25 }
+sweep = { var = "pattern", values = ["sequential", "uniform"] }
+series = [
+  { name = "pool (O_DIRECT)", io_mode = "direct" },
+  { name = "double (buffered + pool)", io_mode = "buffered" },
+  { name = "os (buffered, tiny pool)", io_mode = "buffered", pool = 16 },
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[[experiment]]
+id = "e3_hotspot"
+title = "(c) Hotspot skew: 80/20 vs 95/5 vs uniform"
+question = "Does the pool keep a hot set resident, and how does that compare with the OS page cache under the same memory budget?"
+x_label = "access skew (hot keys / hot ops)"
+metrics = ["storage_hit_ratio", "hit_ratio", "p50_us", "p99_us", "throughput_ops", "evictions", "dev_read_kib"]
+base = { keys = 600000, ops = 150000, warmup_ops = 150000, mem_budget_mib = 10 }
+sweep = { var = "skew", values = [
+  { label = "uniform", pattern = "uniform" },
+  { label = "hotspot 80/20", pattern = "hotspot", hot_keys = 0.2, hot_ops = 0.8 },
+  { label = "hotspot 95/5", pattern = "hotspot", hot_keys = 0.05, hot_ops = 0.95 },
+] }
+series = [
+  { name = "pool (O_DIRECT)", io_mode = "direct", budget_use = "pool" },
+  { name = "os (buffered, tiny pool)", io_mode = "buffered", budget_use = "os" },
+  { name = "pool, equal data capacity", io_mode = "direct", budget_use = "pool_capacity" },
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[[experiment]]
+id = "e4_read_write"
+title = "(d) Read/write ratio with and without WAL durability"
+question = "How do write share and per-commit fdatasync change throughput, p99 and flush counts?"
+x_label = "read % / write %"
+metrics = ["throughput_ops", "p99_us", "page_flushes", "wal_syncs", "wal_sync_ms", "dev_writes"]
+runs = 3
+base = { pattern = "uniform", keys = 150000, ops = 20000, warmup_ops = 20000, pool_ratio = 0.25 }
+sweep = { var = "read_pct", values = [100, 80, 50, 20] }
+series = [
+  { name = "pool, durability=off", io_mode = "direct", durability = "off" },
+  { name = "pool, durability=sync", io_mode = "direct", durability = "sync" },
+  { name = "pool, durability=group(64)", io_mode = "direct", durability = "group", group_commit = 64 },
+  { name = "double, durability=sync", io_mode = "buffered", durability = "sync" },
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[[experiment]]
+id = "e5_io_mode"
+title = "(e) I/O mode: buffered vs O_DIRECT across memory regimes"
+question = "When does O_DIRECT pay off, and when do buffered and direct look the same?"
+x_label = "memory regime"
+metrics = ["throughput_ops", "p50_us", "p99_us", "cpu_util", "cpu_sys_s", "dev_util_pct", "storage_hit_ratio"]
+base = { pattern = "zipf", zipf_theta = 0.99, scramble = true, ops = 150000, warmup_ops = 150000 }
+sweep = { var = "regime", values = [
+  { label = "fits in RAM, warm", keys = 600000, cache = "warm", pool_ratio = 1.0 },
+  { label = "fits in RAM, cold", keys = 600000, cache = "cold", pool_ratio = 1.0 },
+  { label = "256 MiB data, 64 MiB budget", keys = 2200000, cache = "warm", mem_budget_mib = 64 },
+] }
+series = [
+  { name = "os (buffered, tiny pool)", io_mode = "buffered", budget_use = "os" },
+  { name = "pool (O_DIRECT)", io_mode = "direct", budget_use = "pool" },
+  { name = "double (buffered + pool)", io_mode = "buffered", budget_use = "split" },
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[[experiment]]
+id = "e6_memory_budget"
+title = "(f) Buffer size sweep at equal memory budget (8 MiB - 512 MiB)"
+question = "At the same memory budget, when does the custom pool beat the OS page cache?"
+x_label = "cache memory budget (MiB)"
+metrics = ["throughput_ops", "p50_us", "p99_us", "storage_hit_ratio", "dev_reads", "cpu_util"]
+runs = 3
+base = { pattern = "zipf", zipf_theta = 0.99, scramble = true, keys = 2200000, ops = 100000, warmup_ops = 100000 }
+sweep = { var = "mem_budget_mib", values = [8, 32, 64, 128, 256, 512] }
+series = [
+  { name = "pool (O_DIRECT)", io_mode = "direct", budget_use = "pool" },
+  { name = "os (buffered, tiny pool)", io_mode = "buffered", budget_use = "os" },
+  { name = "pool, equal data capacity", io_mode = "direct", budget_use = "pool_capacity" },
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[[experiment]]
+id = "e7_replacer"
+title = "(extra) CLOCK vs LRU baseline"
+question = "Does CLOCK match LRU's hit ratio, and what does LRU's victim search cost?"
+x_label = "access pattern"
+metrics = ["hit_ratio", "throughput_ops", "p99_us", "cpu_util"]
+base = { keys = 600000, ops = 150000, warmup_ops = 150000, io_mode = "direct", pool_ratio = 0.1 }
+sweep = { var = "skew", values = [
+  { label = "uniform", pattern = "uniform" },
+  { label = "hotspot 80/20", pattern = "hotspot", hot_keys = 0.2, hot_ops = 0.8 },
+  { label = "zipf 0.99", pattern = "zipf", zipf_theta = 0.99, scramble = true },
+] }
+series = [
+  { name = "CLOCK", replacer = "clock" },
+  { name = "LRU (baseline)", replacer = "lru" },
+]

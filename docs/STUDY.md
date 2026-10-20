@@ -699,3 +699,60 @@ it grows the file without bound and constantly moves hot keys to new pages. That
 the buffer pool. An in-place update when the record fits (fixed-size values always fit)
 keeps the working set stable. It is logged as a physiological `UPDATE(page, slot, k, v)`
 redo record, which is idempotent under the page-LSN rule exactly like PUT.
+
+---
+
+## 14. Phase 8: How to Benchmark a Buffer Manager Without Fooling Yourself
+
+### 14.1 The page cache is a silent second cache
+With buffered I/O, a buffer-pool miss is often *not* a disk read: the kernel's page cache serves it from RAM.
+On a machine with more RAM than the dataset, "buffered + pool" is therefore really "pool + free second cache". In E1 the
+O_DIRECT path at 0.25× pool size did 22k op/s while the buffered path with the same pool did 202k op/s and **0** device reads.
+Any comparison that does not control the page cache mostly measures the page cache.
+
+### 14.2 Equal memory budgets with cgroups
+A memory cgroup (`memory.limit_in_bytes` in v1, `memory.max` in v2) charges page-cache pages to the cgroup that
+read them, so it can cap the OS cache. To give the OS and the pool the same budget M:
+* measure the process's own memory (index, vectors) first: steady anon and peak;
+* `os` gets limit = steady anon + M (page cache is reclaimable, so no slack is needed);
+* `pool` gets limit = peak + pool footprint + small slack (anonymous memory is not reclaimable without swap, so too little means an OOM kill);
+* **measure** the cache actually held (`memory.stat` → `cache`) instead of trusting the arithmetic. The first attempt
+  silently gave the OS ~1.8× its budget.
+
+### 14.3 Bytes per cached page: layout matters
+`struct Frame { uint32_t page_id; …; alignas(4096) std::byte data[4096]; }` has `sizeof == 8192`: the alignment pads the
+32-byte header to a whole page. At equal memory the pool then holds half the data the page cache holds, and loses for
+that reason alone (E6 at 256 MiB: 83k vs 173k op/s). Production pools keep descriptors in a separate array (PostgreSQL
+`BufferDescriptors` + `BufferBlocks`, InnoDB `buf_block_t`→frame). Comparing at *equal data capacity* separates the
+replacement policy (CLOCK beat the kernel there: 471.6k vs 172.8k op/s at 256 MiB) from the layout cost.
+
+### 14.4 Hit-path cost: why databases bother
+A pool hit is a hash lookup + pin (13 ns in `micro_bench`). An OS "hit" is `pread` (syscall + 4 KiB copy) plus checksum
+verification, ~4–7 µs end to end per operation versus ~1.5–3.5 µs for a pool hit. When the working set fits, this alone
+makes the database cache 2–2.8× faster.
+
+### 14.5 What O_DIRECT gives up: readahead
+The kernel detects sequential access and reads ahead in large chunks. In E2 a cold scan cost 145 device reads buffered vs
+4,412 with O_DIRECT (2.3× throughput difference). Databases on O_DIRECT implement their own prefetching (PostgreSQL's
+`effective_io_concurrency` prefetch, InnoDB read-ahead) for this reason.
+
+### 14.6 Telling device saturation from software limits
+`/sys/block/<dev>/stat` gives completed I/Os, sectors, time spent, `io_ticks` (busy ms) and weighted queue time.
+iostat's `%util = Δio_ticks/Δt`, `aqu-sz = Δtime_in_queue/Δt`, `r_await = Δread_ticks/Δreads`. In every BufferScope run
+util stayed ≤ 69% and aqu-sz ≤ 1.8 while CPU was ~0.5 cores (miss-heavy) or ~1.0 core (hit-heavy). The bottleneck was the
+single thread waiting on one synchronous I/O at a time (latency-bound, QD = 1), not the device. Higher miss throughput
+would need concurrency or asynchronous I/O (io_uring), not a smarter policy.
+
+### 14.7 Making the hidden visible: CRC cost
+A byte-at-a-time CRC32 processes ~365 MiB/s, so a 4 KiB page took 10.9 µs, a quarter of a device read on this disk.
+Slicing-by-8 (eight lookup tables, 8 bytes per step) produces identical checksums at ~1.9 GiB/s (2.0 µs/page).
+Hardware CRC32C (SSE4.2 `crc32` instruction) would be faster still, but changes the polynomial and so the on-disk format.
+
+## 15. Phase 9: Reproducibility Checklist
+
+* **One command** (`scripts/run_all.sh`) builds, tests, runs the matrix, plots and validates. It must work from a fresh
+  clone, which is verified by cloning from GitHub into an empty directory.
+* **Config, not code**: every experiment parameter is a flag or a config key (`configs/experiments.toml`, `--config`).
+* **Raw data first**: plots are generated from raw CSVs, and a checker recomputes the plotted aggregates from the CSVs.
+* **Variance always**: mean ± sd plus min–max, ≥3 repetitions, every row tagged with its cache state.
+* **Record the environment**: `results/raw/environment.txt` (CPU, RAM, kernel, filesystem, device queue settings, git commit).

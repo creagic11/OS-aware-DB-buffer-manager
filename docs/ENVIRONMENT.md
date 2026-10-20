@@ -60,3 +60,14 @@ labelled with that machine. They are **not** interchangeable.
 | **Logical / physical sector** | 512 B / 4096 B (`/sys/block/vda/queue/*_block_size`) |
 | **O_DIRECT**       | Supported; 4096-byte alignment (= max(sector, PAGE_SIZE)) verified by `DirectIOTest` and `io_mode_correctness_test` |
 | **Toolchain**      | GCC 13.3.0, CMake 3.28.3, Ninja, GoogleTest 1.14.0, Google Benchmark 1.8.3, Python 3.12 + pandas 3.0.5 + matplotlib 3.11.2 |
+
+### Phase 8 measurement tooling (secondary environment)
+
+| Item | Value |
+|---|---|
+| Device baseline (runner, QD1) | ~15–18 k random 4 KiB reads/s, `r_await` ≈ 0.04 ms, virtio `vda` |
+| iostat / pidstat | sysstat 12.x (`iostat -x -y -t 1` logged per experiment) |
+| perf | `/usr/lib/linux-tools/6.8.0-147-generic/perf`; software events only (hardware counters not exposed in the VM) |
+| Memory cgroups | cgroup v1 `memory` controller; page cache verified to be charged and capped (300 MiB file in a 96 MiB cgroup → 95 MiB resident) |
+| Cold cache | `posix_fadvise(DONTNEED)` on the data file (no root needed); `drop_caches` available but not required |
+| Snapshot | `results/raw/environment.txt` (written by every matrix run) |
