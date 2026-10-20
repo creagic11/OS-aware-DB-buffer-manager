@@ -19,6 +19,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 
 # Include paths
 include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(${PROJECT_SOURCE_DIR}/bench)
 
 # Core library
 add_library(bufferscope_core
@@ -35,6 +36,20 @@ target_include_directories(bufferscope_core PUBLIC
 # Main executable
 add_executable(bufferscope src/main.cpp)
 target_link_libraries(bufferscope bufferscope_core)
+
+# Benchmark workload library
+add_library(bufferscope_bench
+    bench/workload.cpp
+)
+target_include_directories(bufferscope_bench PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/bench
+)
+target_link_libraries(bufferscope_bench bufferscope_core)
+
+# Benchmark runner executable
+add_executable(bench_runner bench/runner.cpp)
+target_link_libraries(bench_runner bufferscope_bench bufferscope_core)
 
 # Testing with GoogleTest
 enable_testing()
