@@ -18,8 +18,8 @@
 | 5 | Direct I/O Path | ✅ Done (reviewed, metrics wired) | Correctness identical on both paths; alignment errors diagnosable | `direct_io_test`, `io_mode_correctness_test` |
 | 6 | WAL + Recovery | ✅ Done | Injected crashes recover committed data | `wal_recovery_test` (13), `crash_injection_test` (11 scenarios × 2 I/O modes) |
 | 7 | Workload Framework | ✅ Done | Deterministic, machine-readable workloads | `workload_test` (10), `bench_runner_smoke` |
-| 8 | Comparative Experiments | ⏳ Next | ≥ 5 experiments with p50/p99 + IOPS | — |
-| 9 | Polish & Freeze | ⬜ Pending | Fresh clone runs the suite with one command | — |
+| 8 | Comparative Experiments | ✅ Done | ≥ 5 experiments with p50/p99 + IOPS | 7 experiments, 273 runs, `scripts/check_results.py` OK |
+| 9 | Polish & Freeze | ✅ Done | Fresh clone runs the suite with one command | `scripts/run_all.sh` verified from a fresh GitHub clone |
 
 ---
 
@@ -189,3 +189,52 @@ SHA-256 compared in the smoke test). Hotspot hot-set share is within ±0.5% of t
 80/20 and 95/5 (200k ops). Zipf rank-1 frequency matches 1/ζ(n,θ) within 1%. Read share
 is within ±0.5% for 100/0, 80/20, 50/50, 20/80, 0/100. The bounded-integer χ² test passes.
 13/13 CTest suites pass under ASan+UBSan.
+
+### Phase 8 — Comparative Experiments ✅
+
+- Matrix in `configs/experiments.toml`, run by `scripts/run_experiments.py`: 7 experiments
+  (spec items a–f plus CLOCK vs LRU), 273 measured runs, 3–5 repetitions per point. Every row records cache state
+  and measured page-cache residency.
+- Device saturation vs software cost: in-process `/sys/dev/block/*/stat` deltas per measured window (util, queue size,
+  await, device IOPS), CPU/faults/context switches, plus `iostat -x 1` logs per experiment and `perf stat` per
+  invocation (`results/raw/`).
+- **Equal memory budgets via memory cgroups.** Without them the 7 GiB page cache holds every dataset, which is the
+  spec's "buffered and direct look the same" trap. The page cache each `os` run actually held is measured
+  (`cgroup_cache_mib`, 93–99% of budget).
+- Issues found and fixed while running the matrix:
+  1. CRC32 was 10.9 µs/page (bytewise); slicing-by-8 makes it 2.0 µs/page with identical output.
+  2. Cgroup OOM: the base RSS was calibrated at end-of-run, missing the index-rehash peak. Fixed by pre-sizing the index and using peak RSS.
+  3. An explicit `pool` in a series was overridden by a base `pool_ratio`, so E2 `os` was wrong; fixed and rerun.
+  4. Fairness: the `os` config was getting the pool's anonymous-memory slack as extra page cache. Its limit is now steady anon + budget, and the cache is measured.
+  5. The canonical `Frame` is 8 KiB per 4 KiB page (`static_assert`). Budgets count real bytes, and an "equal data capacity" series isolates policy from layout.
+- `scripts/plot.py` (mean ± sd error bars, min–max whiskers, aggregates saved beside each plot),
+  `scripts/check_results.py` (CSV ↔ plot consistency, ≥3 reps, ≥5 experiments). Write-up in `docs/EXPERIMENTS.md`,
+  answer to the research question in `docs/DESIGN_REPORT.md`.
+
+### Phase 9 — Polish & Freeze ✅
+
+- `--config FILE` (key = value) for both `bufferscope` and `bench_runner`; command-line flags override the file (`configs/example.conf`).
+- `bufferscope` CLI: put/get/del/checkpoint/stats, `--io-mode`, `--pool`/`--pool-mb`, `--durability`, `--group-commit`.
+- README rewritten: overview, research question, architecture diagram, page format, clean-clone build, usage,
+  results, limitations. `docs/DESIGN_REPORT.md` cites measured numbers only.
+- `scripts/run_all.sh`: prerequisites → Release build → 13 CTest suites → full matrix → plots → validation
+  (`--quick` for a reduced smoke run, `--no-bench` for build + tests).
+- Definition of Done:
+
+| Item | Evidence |
+|---|---|
+| Persistent page-oriented KV store works across restarts | `kv_correctness_test`, `io_mode_correctness_test` (restart after 10k oracle ops, both I/O modes) |
+| Pool supports fetch, pin/unpin, dirty tracking, eviction | `buffer_pool_test`, `buffer_pool_eviction_test`, `buffer_pool_reference_test` |
+| CLOCK behaves correctly under controlled tests | `clock_replacer_test`, 72-sequence reference model, E7 |
+| Buffered and O_DIRECT paths run the same logical workload | parameterised suites; E1–E6 |
+| Suite reports hit ratio, throughput, p50/p99, bytes moved, flush counts | `scripts/SCHEMA.md` columns; `results/raw/*.csv` |
+| ≥5 comparative experiments reproducible | 7 experiments; `scripts/run_all.sh`; `check_results.py` |
+| Crash injection validates WAL/recovery | `crash_injection_test` (22), `wal_recovery_test` (13) |
+| README explains when the custom buffer manager wins, loses, and why | README § Results, `docs/DESIGN_REPORT.md` |
+
+**Fresh-clone verification (Phase 9 exit criterion).** The branch was cloned from GitHub into an empty directory and only
+`DATA_DIR=<ext4 dir> scripts/run_all.sh --quick` was run. Result: Release build OK, 13/13 CTest suites passed, all 7 experiments
+ran, plots regenerated, and `check_results.py` reported 7/7 experiments consistent (n ≥ 3), exit code 0. The full-scale
+matrix (`scripts/run_all.sh` without `--quick`, ~60–90 min here) produced the committed `results/`. Debug + ASan/UBSan: 13/13 pass.
+
+## Project status: all phases (0–9) complete.
