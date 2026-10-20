@@ -87,7 +87,7 @@ WalScan LogManager::scan(const std::string& path) {
         if (static_cast<uint64_t>(h.key_len) + h.val_len + sizeof(h) != h.length) break;
         if (crc32(buf.data() + off + 8, h.length - 8) != h.crc) break;
         if (expect_lsn != 0 && h.lsn != expect_lsn) break;
-        if (h.type < 1 || h.type > 4) break;
+        if (h.type < 1 || h.type > 5) break;
 
         WalRecord r;
         r.lsn = h.lsn;
@@ -170,6 +170,12 @@ uint64_t LogManager::append_put(uint32_t page_id, uint16_t slot, const std::stri
 uint64_t LogManager::append_tombstone(uint32_t page_id, uint16_t slot, bool commit) {
     return append(WalRecordType::TOMBSTONE, commit ? WAL_FLAG_COMMIT : 0, page_id, slot, nullptr, 0,
                   nullptr, 0);
+}
+
+uint64_t LogManager::append_update(uint32_t page_id, uint16_t slot, const std::string& key,
+                                   const std::string& value, bool commit) {
+    return append(WalRecordType::UPDATE, commit ? WAL_FLAG_COMMIT : 0, page_id, slot, key.data(),
+                  static_cast<uint32_t>(key.size()), value.data(), static_cast<uint32_t>(value.size()));
 }
 
 uint64_t LogManager::append_page_image(uint32_t page_id, const std::byte* image) {

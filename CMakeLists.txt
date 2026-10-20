@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(BufferScope VERSION 0.6.0 LANGUAGES CXX)
+project(BufferScope VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -80,3 +80,12 @@ bufferscope_test(direct_io_test             tests/direct_io_test.cpp)
 bufferscope_test(io_mode_correctness_test   tests/io_mode_correctness_test.cpp)
 bufferscope_test(wal_recovery_test          tests/wal_recovery_test.cpp)
 bufferscope_test(crash_injection_test       tests/crash_injection_test.cpp)
+
+add_executable(workload_test tests/workload_test.cpp)
+target_link_libraries(workload_test bufferscope_bench bufferscope_core GTest::gtest_main)
+add_test(NAME workload_test COMMAND workload_test)
+
+# Runner smoke test: machine-readable outputs are produced and well-formed.
+add_test(NAME bench_runner_smoke
+         COMMAND ${CMAKE_COMMAND} -DRUNNER=$<TARGET_FILE:bench_runner> -DOUT=${CMAKE_BINARY_DIR}/smoke
+                 -P ${PROJECT_SOURCE_DIR}/tests/runner_smoke.cmake)

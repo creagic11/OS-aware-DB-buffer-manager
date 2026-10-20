@@ -12,7 +12,7 @@
  *   u32 length   total record bytes including this header
  *   u32 crc      CRC32 over bytes [8, length)  (everything after this field)
  *   u64 lsn      strictly increasing by 1 per record
- *   u8  type     WalRecordType
+ *   u8  type     WalRecordType (1..5)
  *   u8  flags    WAL_FLAG_COMMIT on the last record of a KV operation
  *   u16 slot     slot index (PUT / TOMBSTONE)
  *   u32 page_id  target page (CHECKPOINT: number of pages in the data file)
@@ -44,6 +44,7 @@ enum class WalRecordType : uint8_t {
     PAGE_IMAGE = 2,  // full 4 KiB before-image of a page (first touch after checkpoint / new page)
     PUT = 3,         // insert (key, value) at (page_id, slot)
     TOMBSTONE = 4,   // delete the record at (page_id, slot)
+    UPDATE = 5,      // overwrite the record at (page_id, slot) in place with (key, value)
 };
 
 constexpr uint8_t WAL_FLAG_COMMIT = 0x1;
@@ -112,6 +113,8 @@ public:
     uint64_t append_put(uint32_t page_id, uint16_t slot, const std::string& key,
                         const std::string& value, bool commit);
     uint64_t append_tombstone(uint32_t page_id, uint16_t slot, bool commit);
+    uint64_t append_update(uint32_t page_id, uint16_t slot, const std::string& key,
+                           const std::string& value, bool commit);
     uint64_t append_page_image(uint32_t page_id, const std::byte* image);
 
     /// Make every appended record durable (write + fdatasync). No-op if nothing pending.

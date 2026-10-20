@@ -40,7 +40,8 @@ RecoveryReport RecoveryManager::recover() {
         }
     }
     for (size_t i = committed_end; i < recs.size(); ++i)
-        if (recs[i].type == WalRecordType::PUT || recs[i].type == WalRecordType::TOMBSTONE)
+        if (recs[i].type == WalRecordType::PUT || recs[i].type == WalRecordType::TOMBSTONE ||
+            recs[i].type == WalRecordType::UPDATE)
             ++rep.discarded_records;
 
     // First page image per page (the before-image of its first touch since the checkpoint).
@@ -118,7 +119,9 @@ RecoveryReport RecoveryManager::recover() {
     // ── 3. Redo committed operations (idempotent via page LSN) ──────────
     for (size_t i = 1; i < committed_end; ++i) {
         const WalRecord& r = recs[i];
-        if (r.type != WalRecordType::PUT && r.type != WalRecordType::TOMBSTONE) continue;
+        if (r.type != WalRecordType::PUT && r.type != WalRecordType::TOMBSTONE &&
+            r.type != WalRecordType::UPDATE)
+            continue;
         auto it = pages.find(r.page_id);
         if (it == pages.end()) {
             throw StorageError("Recovery: WAL record LSN " + std::to_string(r.lsn) + " targets page " +
@@ -135,6 +138,12 @@ RecoveryReport RecoveryManager::recover() {
                                    std::to_string(r.page_id) + " slot " + std::to_string(r.slot) +
                                    " does not match page state (record_count=" +
                                    std::to_string(page.record_count()) + ")");
+            }
+        } else if (r.type == WalRecordType::UPDATE) {
+            if (!page.update_record(r.slot, r.key, r.value)) {
+                throw StorageError("Recovery: redo of UPDATE LSN " + std::to_string(r.lsn) + " on page " +
+                                   std::to_string(r.page_id) + " slot " + std::to_string(r.slot) +
+                                   " does not fit the slot (log/page mismatch)");
             }
         } else {
             page.delete_record(r.slot);  // already deleted => no-op, still idempotent

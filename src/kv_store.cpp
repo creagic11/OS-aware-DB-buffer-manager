@@ -167,11 +167,45 @@ bool KVStore::put(const std::string& key, const std::string& value) {
                                     std::to_string(MAX_KV_BYTES) + ")");
     }
 
+    const auto old = index_.get(key);
+    Frame* old_frame = nullptr;
+
+    // Fast path: overwrite in place when the new record fits in the old slot (always
+    // true for fixed-size values). Keeps the key on its page: no file growth, stable
+    // page-level working set, one page touched, one WAL record.
+    if (old) {
+        Frame* f = pin_or_throw(old->page_id);
+        Page probe(f->data);
+        auto cur = probe.read_record(old->slot_idx);
+        const size_t need = 4 + key.size() + value.size();
+        uint16_t slot_len = 0;
+        {
+            SlotEntry se;
+            std::memcpy(&se, f->data + HEADER_SIZE + old->slot_idx * sizeof(SlotEntry), sizeof(se));
+            slot_len = se.length;
+        }
+        if (cur && need <= slot_len) {
+            uint64_t lsn = 0;
+            if (wal_) {
+                log_image_if_needed(old->page_id, f);
+                lsn = wal_->append_update(old->page_id, old->slot_idx, key, value, true);
+            }
+            bool ok = with_page(f, [&](Page& p) {
+                if (!p.update_record(old->slot_idx, key, value)) return false;
+                if (wal_) p.set_lsn(lsn);
+                return true;
+            });
+            bpm_->unpin_page(old->page_id, ok);
+            if (!ok) throw std::logic_error("KVStore: in-place update failed after fit check");
+            commit_op();
+            return true;
+        }
+        old_frame = f;  // stays pinned for the slow path
+    }
+
+    // Slow path (new key, or a larger value): tombstone old version + append.
     // 1. Pin every page this operation touches BEFORE logging anything, so no
     //    eviction (and thus no WAL flush) can happen between its log records.
-    const auto old = index_.get(key);
-    Frame* old_frame = old ? pin_or_throw(old->page_id) : nullptr;
-
     Frame* target = nullptr;
     try {
         target = pin_or_throw(active_page_id_);

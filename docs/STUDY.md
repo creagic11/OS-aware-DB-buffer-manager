@@ -659,3 +659,43 @@ On the secondary test machine, fdatasync per mutation costs ~130 µs, which caps
 single thread at ~7.7 k mutations/s versus ~1.2 M op/s without a WAL. Group commit
 amortises the sync over N mutations at the cost of losing up to N−1 acknowledged ops in a
 crash. That is a trade-off to document, not a bug to hide.
+
+---
+
+## 13. Phase 7: Reproducible Workloads
+
+### 13.1 Why not `std::uniform_int_distribution`?
+The C++ standard specifies the *engines* (e.g. `mt19937_64` produces the same numbers
+everywhere) but not the *distributions*. libstdc++, libc++ and MSVC turn the same engine
+output into different integers. An experiment that must be "exactly reproducible" therefore
+needs its own distribution code. BufferScope uses SplitMix64 plus Lemire's unbiased
+multiply-shift for bounded integers, so `uniform`, `sequential` and `hotspot` are
+bit-identical on every platform. Golden hashes in the tests catch regressions.
+
+### 13.2 The access patterns and what they test
+| Pattern | Definition | Buffer-manager question it answers |
+|---|---|---|
+| sequential | key = seq mod N | scan resistance: does a one-pass scan flush the hot set? |
+| uniform | every key equally likely | no locality: hit ratio ≈ pool / data size |
+| hotspot h/o | o% of ops hit the first h% of keys | does the policy keep the hot set resident? (80/20, 95/5) |
+| zipf θ | P(rank r) ∝ 1/r^θ (YCSB generator) | heavy-tailed real-world skew |
+
+Because keys are loaded in key order, key id ↔ page is monotone. The hot set of a hotspot
+workload is therefore a contiguous run of pages: 20% of keys means 20% of pages.
+`--scramble` hashes key ids to spread hot keys over all pages, which models the much
+weaker page-level locality you get when hot rows are scattered.
+
+### 13.3 Cache state is part of the experiment
+`warm`: the pool and the OS cache are both warmed by a warm-up phase on the same store.
+`oswarm`: the pool is emptied but the OS page cache still holds the file. Every pool miss
+then costs a syscall + memcpy, not a device read. This is the "double caching" regime.
+`cold`: pool emptied *and* the file dropped from the OS cache with `posix_fadvise(DONTNEED)`
+(no root needed). The runner records `os_cache_resident_before` (via `mincore`) so the state
+is *measured*, not assumed.
+
+### 13.4 Out-of-place vs in-place updates
+Appending every new version (log-structured style) is simple, but under a write-heavy mix
+it grows the file without bound and constantly moves hot keys to new pages. That defeats
+the buffer pool. An in-place update when the record fits (fixed-size values always fit)
+keeps the working set stable. It is logged as a physiological `UPDATE(page, slot, k, v)`
+redo record, which is idempotent under the page-LSN rule exactly like PUT.

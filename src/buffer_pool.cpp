@@ -3,6 +3,7 @@
 #include "bufferscope/crash.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
@@ -269,6 +270,26 @@ Frame* BufferPoolManager::new_page(uint32_t& page_id) {
     page_table_[pid] = frame_id;
     metrics_.record_miss();
     return &frame;
+}
+
+size_t BufferPoolManager::evict_all() {
+    flush_all_pages();
+    size_t released = 0;
+    for (auto it = page_table_.begin(); it != page_table_.end();) {
+        Frame& f = frames_[it->second];
+        if (f.pin_count == 0) {
+            size_t fid = it->second;
+            it = page_table_.erase(it);
+            release_frame(fid);
+            ++released;
+        } else {
+            ++it;
+        }
+    }
+    // Restore the "frames handed out 0,1,2,..." order for reproducibility.
+    std::sort(free_list_.begin(), free_list_.end(), std::greater<size_t>());
+    replacer_->reset();
+    return released;
 }
 
 bool BufferPoolManager::delete_page(uint32_t page_id) {

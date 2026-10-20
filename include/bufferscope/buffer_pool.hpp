@@ -81,6 +81,10 @@ public:
 
     bool is_resident(uint32_t page_id) const;
 
+    /// Write back dirty pages and drop every unpinned frame (cold buffer pool).
+    /// Returns the number of frames released. Pinned frames are kept.
+    size_t evict_all();
+
     size_t pool_size() const { return pool_size_; }
     uint32_t num_pages() const { return num_pages_; }
     const CacheMetrics& metrics() const { return metrics_; }

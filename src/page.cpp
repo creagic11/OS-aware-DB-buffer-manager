@@ -236,6 +236,23 @@ bool Page::insert_record(const std::string& key, const std::string& value) {
     return true;
 }
 
+bool Page::update_record(uint16_t slot_idx, const std::string& key, const std::string& value) {
+    if (slot_idx >= header_.record_count) return false;
+    SlotEntry slot = get_slot(slot_idx);
+    const size_t need = 4 + key.size() + value.size();
+    if (slot.length == 0 || need > slot.length) return false;
+    const uint16_t key_len = static_cast<uint16_t>(key.size());
+    const uint16_t val_len = static_cast<uint16_t>(value.size());
+    size_t pos = slot.offset;
+    std::memcpy(data_.data() + pos, &key_len, 2); pos += 2;
+    std::memcpy(data_.data() + pos, &val_len, 2); pos += 2;
+    std::memcpy(data_.data() + pos, key.data(), key_len); pos += key_len;
+    std::memcpy(data_.data() + pos, value.data(), val_len);
+    slot.length = static_cast<uint16_t>(need);
+    set_slot(slot_idx, slot);
+    return true;
+}
+
 bool Page::can_fit(size_t key_len, size_t value_len) const {
     const size_t need = 4 + key_len + value_len;
     const size_t new_dir_end = HEADER_SIZE + (static_cast<size_t>(header_.record_count) + 1) * sizeof(SlotEntry);

@@ -95,6 +95,10 @@ public:
     // Returns true on success, false if page is full.
     bool insert_record(const std::string& key, const std::string& value);
 
+    // Overwrite the record in `slot_idx` in place if the new record is no larger than
+    // the slot's current extent. Returns false (page unchanged) otherwise.
+    bool update_record(uint16_t slot_idx, const std::string& key, const std::string& value);
+
     // True if insert_record(key, value) would succeed (no mutation).
     bool can_fit(size_t key_len, size_t value_len) const;
 

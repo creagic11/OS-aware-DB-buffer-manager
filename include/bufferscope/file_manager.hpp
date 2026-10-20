@@ -95,6 +95,11 @@ public:
     /// fdatasync the data file.
     void flush();
 
+    /// fdatasync, then ask the kernel to drop this file's pages from the OS page
+    /// cache (posix_fadvise DONTNEED). Gives a cold OS cache without root.
+    /// Returns false if the advice could not be applied.
+    bool drop_os_cache();
+
     /// Truncate the file to exactly n pages (used by crash-injection tests).
     void truncate_pages(uint32_t n);
 

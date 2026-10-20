@@ -179,6 +179,15 @@ void FileManager::flush() {
         std::memory_order_relaxed);
 }
 
+bool FileManager::drop_os_cache() {
+    flush();
+#ifdef __linux__
+    return ::posix_fadvise(fd_, 0, 0, POSIX_FADV_DONTNEED) == 0;
+#else
+    return false;
+#endif
+}
+
 void FileManager::truncate_pages(uint32_t n) {
     if (::ftruncate(fd_, page_offset(n)) < 0) {
         int err = errno;

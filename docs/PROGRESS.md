@@ -17,8 +17,8 @@
 | 4 | Buffered Baseline & Bench Harness | ✅ Done (reviewed, runner fixed) | Stable baseline | `bench_runner` (5 runs, CoV reported), `micro_bench` |
 | 5 | Direct I/O Path | ✅ Done (reviewed, metrics wired) | Correctness identical on both paths; alignment errors diagnosable | `direct_io_test`, `io_mode_correctness_test` |
 | 6 | WAL + Recovery | ✅ Done | Injected crashes recover committed data | `wal_recovery_test` (13), `crash_injection_test` (11 scenarios × 2 I/O modes) |
-| 7 | Workload Framework | ⏳ Next | Deterministic, machine-readable workloads | — |
-| 8 | Comparative Experiments | ⬜ Pending | ≥ 5 experiments with p50/p99 + IOPS | — |
+| 7 | Workload Framework | ✅ Done | Deterministic, machine-readable workloads | `workload_test` (10), `bench_runner_smoke` |
+| 8 | Comparative Experiments | ⏳ Next | ≥ 5 experiments with p50/p99 + IOPS | — |
 | 9 | Polish & Freeze | ⬜ Pending | Fresh clone runs the suite with one command | — |
 
 ---
@@ -156,3 +156,36 @@ Release, and the crash suites were repeated 5× with no flakes.
 **Known limitations:** single-threaded; deleted record space is never reclaimed (a
 tombstone keeps its slot); a corrupt record in the middle of the WAL is treated as the
 end of the log (the same as PostgreSQL).
+
+### Phase 7 — Workload Framework ✅
+
+- `bench/workload.{hpp,cpp}`: **sequential**, **uniform**, **zipf** (YCSB/Gray generator,
+  θ configurable), and **hotspot** (any hot-keys/hot-ops split; 80/20 and 95/5 tested).
+  Optional `--scramble` spreads hot keys across pages. Configurable read/write mix
+  (`--read-pct` or `--mix=80/20`) plus an optional DELETE share of writes.
+- **Determinism**: own SplitMix64 PRNG, Lemire unbiased bounded integers, own
+  distribution code (no `std::*_distribution`, whose output is implementation-defined).
+  The workload is a pure function of (config, seed), and golden hashes are frozen in the tests.
+- `bench/runner.cpp` rewritten: every parameter is a runtime flag (pattern, mix, seed,
+  keys, ops, value size, θ, hot fractions, pool size in frames or MiB, I/O mode,
+  durability, replacer, cache state, runs). Each run does a fresh DB, then an untimed LOAD,
+  then explicit cache-state preparation (`warm` / `oswarm` / `cold`, using
+  `BufferPoolManager::evict_all()` + `posix_fadvise(DONTNEED)`), then counter reset and a
+  `mincore` residency snapshot, then a timed run.
+- Machine-readable output: summary CSV (60 columns incl. hit ratio, evictions, flushes,
+  bytes moved, page IOPS, WAL syncs, CPU, faults, context switches, `/proc/self/io` device
+  bytes), JSON with mean/sd/min/max aggregates, per-op trace `seq,op,key,latency_ns`, and an
+  op dump for determinism checks. Schema: `scripts/SCHEMA.md`.
+- **Engine change driven by the workload work: in-place updates.** Previously every
+  PUT, even an overwrite, tombstoned and re-appended. Under writes that made the file grow
+  without bound and moved hot keys onto new pages, distorting buffer-pool experiments.
+  `Page::update_record` + WAL `UPDATE` record (idempotent redo, same page-LSN rule) now
+  overwrite in place when the new record fits in the old slot. Hotspot 80/20 example
+  (20k keys, 200-frame pool, cold, 50% writes): hit ratio 60.9% → 77.9%, throughput
+  65 k → 177 k op/s.
+
+Evidence: same seed → byte-identical op dumps for all four patterns (two invocations,
+SHA-256 compared in the smoke test). Hotspot hot-set share is within ±0.5% of target for
+80/20 and 95/5 (200k ops). Zipf rank-1 frequency matches 1/ζ(n,θ) within 1%. Read share
+is within ±0.5% for 100/0, 80/20, 50/50, 20/80, 0/100. The bounded-integer χ² test passes.
+13/13 CTest suites pass under ASan+UBSan.
