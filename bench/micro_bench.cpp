@@ -43,6 +43,7 @@ BENCHMARK(BM_PageInsert);
 static void BM_BufferPoolHit(benchmark::State& state) {
     auto path = tmp_path("bpmhit");
     std::filesystem::remove(path);
+    std::filesystem::remove(path + ".wal");
     {
         FileManager fm(path);
         BufferPoolManager bpm(64, fm);
@@ -58,12 +59,14 @@ static void BM_BufferPoolHit(benchmark::State& state) {
         }
     }
     std::filesystem::remove(path);
+    std::filesystem::remove(path + ".wal");
 }
 BENCHMARK(BM_BufferPoolHit);
 
 static void BM_KVGetResident(benchmark::State& state) {
     auto path = tmp_path("kvget");
     std::filesystem::remove(path);
+    std::filesystem::remove(path + ".wal");
     {
         KVStore kv(path, 256);
         for (int i = 0; i < 1000; ++i) kv.put("key_" + std::to_string(i), std::string(64, 'v'));
@@ -74,6 +77,7 @@ static void BM_KVGetResident(benchmark::State& state) {
         }
     }
     std::filesystem::remove(path);
+    std::filesystem::remove(path + ".wal");
 }
 BENCHMARK(BM_KVGetResident);
 

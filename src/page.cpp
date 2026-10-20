@@ -18,30 +18,45 @@ namespace bufferscope {
 // ── CRC32 lookup table (precomputed) ───────────────────────────────
 static constexpr uint32_t CRC32_POLY = 0xEDB88320u;
 
-static constexpr std::array<uint32_t, 256> make_crc_table() {
-    std::array<uint32_t, 256> table{};
+// Slicing-by-8 tables: table[0] is the classic byte-wise table; table[k][i] is the
+// CRC of byte i followed by k zero bytes. Processing 8 bytes per step gives the
+// identical CRC32 (same polynomial/reflection/xor-out) ~6-8x faster than the
+// byte-at-a-time loop.
+static constexpr std::array<std::array<uint32_t, 256>, 8> make_crc_tables() {
+    std::array<std::array<uint32_t, 256>, 8> t{};
     for (uint32_t i = 0; i < 256; ++i) {
         uint32_t crc = i;
-        for (int j = 0; j < 8; ++j) {
-            if (crc & 1)
-                crc = (crc >> 1) ^ CRC32_POLY;
-            else
-                crc >>= 1;
-        }
-        table[i] = crc;
+        for (int j = 0; j < 8; ++j) crc = (crc & 1) ? (crc >> 1) ^ CRC32_POLY : crc >> 1;
+        t[0][i] = crc;
     }
-    return table;
+    for (uint32_t i = 0; i < 256; ++i)
+        for (int k = 1; k < 8; ++k) t[k][i] = (t[k - 1][i] >> 8) ^ t[0][t[k - 1][i] & 0xFF];
+    return t;
 }
 
-static constexpr auto crc_table = make_crc_table();
+static constexpr auto crc_tables = make_crc_tables();
+static constexpr const auto& crc_table = crc_tables[0];
+
+// Continue a (pre-inverted) CRC over `length` bytes.
+static uint32_t crc32_update(uint32_t crc, const std::byte* data, size_t length) {
+    const auto* p = reinterpret_cast<const uint8_t*>(data);
+    while (length >= 8) {
+        uint32_t lo, hi;
+        std::memcpy(&lo, p, 4);
+        std::memcpy(&hi, p + 4, 4);
+        lo ^= crc;  // little-endian host assumed (x86-64 / aarch64)
+        crc = crc_tables[7][lo & 0xFF] ^ crc_tables[6][(lo >> 8) & 0xFF] ^ crc_tables[5][(lo >> 16) & 0xFF] ^
+              crc_tables[4][lo >> 24] ^ crc_tables[3][hi & 0xFF] ^ crc_tables[2][(hi >> 8) & 0xFF] ^
+              crc_tables[1][(hi >> 16) & 0xFF] ^ crc_tables[0][hi >> 24];
+        p += 8;
+        length -= 8;
+    }
+    while (length--) crc = (crc >> 8) ^ crc_table[(crc ^ *p++) & 0xFF];
+    return crc;
+}
 
 uint32_t crc32(const std::byte* data, size_t length) {
-    uint32_t crc = 0xFFFFFFFFu;
-    for (size_t i = 0; i < length; ++i) {
-        uint8_t byte = static_cast<uint8_t>(data[i]);
-        crc = (crc >> 8) ^ crc_table[(crc ^ byte) & 0xFF];
-    }
-    return crc ^ 0xFFFFFFFFu;
+    return crc32_update(0xFFFFFFFFu, data, length) ^ 0xFFFFFFFFu;
 }
 
 // ── Raw page-image helpers ──────────────────────────────────────────
@@ -50,14 +65,9 @@ uint32_t compute_page_checksum(const std::byte* page_bytes) {
     // CRC32 over the page with the 4-byte checksum field treated as zero.
     constexpr size_t off = offsetof(PageHeader, checksum);
     static constexpr std::byte zeros[sizeof(uint32_t)] = {};
-    uint32_t crc = 0xFFFFFFFFu;
-    auto feed = [&crc](const std::byte* d, size_t n) {
-        for (size_t i = 0; i < n; ++i)
-            crc = (crc >> 8) ^ crc_table[(crc ^ static_cast<uint8_t>(d[i])) & 0xFF];
-    };
-    feed(page_bytes, off);
-    feed(zeros, sizeof(uint32_t));
-    feed(page_bytes + off + sizeof(uint32_t), PAGE_SIZE - off - sizeof(uint32_t));
+    uint32_t crc = crc32_update(0xFFFFFFFFu, page_bytes, off);
+    crc = crc32_update(crc, zeros, sizeof(uint32_t));
+    crc = crc32_update(crc, page_bytes + off + sizeof(uint32_t), PAGE_SIZE - off - sizeof(uint32_t));
     return crc ^ 0xFFFFFFFFu;
 }
 

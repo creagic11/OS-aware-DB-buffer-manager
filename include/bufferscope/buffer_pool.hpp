@@ -28,6 +28,12 @@ struct Frame {
     uint64_t last_access = 0;
     alignas(4096) std::byte data[PAGE_SIZE];
 };
+// Consequence of the canonical layout: 32 bytes of metadata before a 4096-aligned
+// array pad the struct to 8 KiB, so each 4 KiB frame costs 8 KiB of RAM (the
+// metadata page is touched on construction). Memory-budgeted experiments size
+// pools by sizeof(Frame), not by PAGE_SIZE. A struct-of-arrays layout (metadata
+// array + separate aligned data arena) would halve this; see docs/EXPERIMENTS.md.
+static_assert(sizeof(Frame) == 2 * PAGE_SIZE, "canonical Frame occupies two 4 KiB pages");
 
 enum class ReplacerType {
     CLOCK,

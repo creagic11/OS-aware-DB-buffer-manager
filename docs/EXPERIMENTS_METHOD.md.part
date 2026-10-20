@@ -1,0 +1,63 @@
+# BufferScope — Comparative Experiments (Phase 8)
+
+All numbers in this document were measured by `scripts/run_experiments.py` (matrix in
+`configs/experiments.toml`). They come from the raw CSVs in `results/raw/` and were
+plotted by `scripts/plot.py`. Tables are copied from `results/summary/*.md`, which
+`plot.py` generates from the same aggregates as the plots, and `scripts/check_results.py`
+verifies that plots and CSVs agree. No number is estimated or typed in by hand.
+
+## Methodology
+
+**Environment.** 2-vCPU Intel Xeon @ 2.1 GHz cloud VM, 7 GiB RAM, Linux 6.18,
+ext4 on a virtio block device (`/dev/vda`, 512 B logical / 4 KiB physical sectors).
+The data directory is on that ext4 filesystem (not tmpfs). Snapshot:
+`results/raw/environment.txt`. Device baseline measured by the runner: ~15–18 k random
+4 KiB reads/s at queue depth 1, `r_await` ≈ 0.04 ms. The disk is virtualised, so absolute
+latencies reflect this VM, not a bare-metal NVMe.
+
+**Protocol (every configuration).**
+1. Fresh database file and WAL.
+2. **Load** (untimed): every key inserted once in key order (11-byte keys, 100-byte
+   values, 34 records per 4 KiB page), then a checkpoint.
+3. **Cache-state preparation**, recorded in every row as `cache_state` together with the
+   measured OS page-cache residency of the data file (`os_cache_resident_before`, via `mincore`):
+   * `warm`: run `warmup_ops` operations from a different seed on the same store instance;
+   * `cold`: evict the buffer pool and drop the file from the OS page cache (`posix_fadvise(DONTNEED)`).
+4. All counters reset. **Measured run**: every operation timed individually
+   (`steady_clock`). Throughput = ops / wall time of the loop.
+5. Final checkpoint timed separately (`end_flush_ms`, not included in throughput).
+6. Repeated `runs` times (5; 3 for the slow e4/e6). Plots show mean ± 1 sd and min–max
+   whiskers. Tables give mean ± sd [min–max].
+
+**Constant across compared modes in an experiment:** page size (4 KiB), key/value
+sizes, workload generator and seed, operation count, warm-up, and the cache-state
+procedure. Only the dimension under study changes.
+
+**Separating device saturation from software cost.** For each run the runner snapshots
+`/sys/dev/block/vda/stat` (the source iostat reads) around the measured loop. That gives
+device IOPS, `dev_util_pct`, average queue size `dev_aqu_sz` and `r_await`. Alongside it
+records CPU time (`cpu_util` in cores), voluntary context switches (blocking I/O), page
+faults and `/proc/self/io` storage bytes. In addition, `iostat -x 1` ran for the whole
+of every experiment (`results/raw/iostat_*.log`) and every invocation ran under
+`perf stat` software counters (`results/raw/perf/`). Reading guide: `cpu_util ≈ 1.0` with
+device util well below 100% means the single benchmark thread is the bottleneck
+(software- or latency-bound, QD=1). Device util near 100% with `aqu-sz` > 1 would mean
+device saturation.
+
+**Equal memory budgets (e3, e5 constrained, e6).** With 7 GiB of RAM the OS page cache
+would hold any test dataset. Buffered I/O then always looks ideal, which is the
+"buffered and direct look the same" trap. These experiments therefore run each
+configuration inside a memory cgroup capped at *calibrated base RSS* (measured with a
+16-frame pool; mostly the in-memory key index) **+ budget + 4 MiB slack**:
+* `os`: a 16-frame pool, so the page cache gets the budget;
+* `pool`: the pool gets the whole budget, counted at the real **8 KiB per frame**
+  (`sizeof(Frame)`, see Finding F1);
+* `double` (e5): the pool gets half the budget and the page cache the rest.
+cgroup v1 charges page-cache pages to the cgroup, so the OS cache really is limited
+(verified: a 300 MiB file read in a 96 MiB cgroup left 95 MiB resident).
+
+**Derived metric.** `storage_hit_ratio = 1 − os_read_bytes / (4096 × page accesses)`
+is the fraction of buffer-pool page lookups that did **not** need a device read, whether
+they were satisfied by the pool or by the OS page cache. It makes `os` and `pool`
+directly comparable (for `pool` it equals the pool hit ratio, because O_DIRECT reads
+always reach the device).

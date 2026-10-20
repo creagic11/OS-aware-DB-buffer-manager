@@ -19,11 +19,13 @@
  * Column meanings are documented in scripts/SCHEMA.md.
  */
 
+#include "bufferscope/config_file.hpp"
 #include "bufferscope/kv_store.hpp"
 #include "bufferscope/metrics.hpp"
 #include "workload.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -39,6 +41,7 @@
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 #include <vector>
 
@@ -109,6 +112,46 @@ Usage read_usage() {
     u.nvcsw = r.ru_nvcsw;
     u.nivcsw = r.ru_nivcsw;
     return u;
+}
+
+/// Resident set (MiB) from /proc/self/status: {VmRSS, RssAnon, RssFile}.
+std::array<double, 3> read_rss_mib() {
+    std::ifstream f("/proc/self/status");
+    std::string k;
+    std::array<double, 3> r{0, 0, 0};
+    while (f >> k) {
+        double kb;
+        if (k == "VmRSS:" && f >> kb) r[0] = kb / 1024;
+        else if (k == "RssAnon:" && f >> kb) r[1] = kb / 1024;
+        else if (k == "RssFile:" && f >> kb) r[2] = kb / 1024;
+    }
+    return r;
+}
+
+/// Block-device counters from /sys/dev/block/MAJ:MIN/stat (same source as iostat).
+struct DevStat {
+    bool ok = false;
+    std::string name;
+    uint64_t rd_ios = 0, rd_sectors = 0, rd_ticks = 0, wr_ios = 0, wr_sectors = 0, wr_ticks = 0, io_ticks = 0,
+             time_in_queue = 0;
+};
+std::string dev_sysfs_for(const std::string& dir) {
+    struct stat st;
+    if (::stat(dir.c_str(), &st) != 0) return {};
+    return "/sys/dev/block/" + std::to_string(major(st.st_dev)) + ":" + std::to_string(minor(st.st_dev));
+}
+DevStat read_dev(const std::string& sysfs) {
+    DevStat d;
+    if (sysfs.empty()) return d;
+    std::ifstream f(sysfs + "/stat");
+    uint64_t rd_merges, wr_merges, in_flight;
+    if (f >> d.rd_ios >> rd_merges >> d.rd_sectors >> d.rd_ticks >> d.wr_ios >> wr_merges >> d.wr_sectors >>
+        d.wr_ticks >> in_flight >> d.io_ticks >> d.time_in_queue) {
+        d.ok = true;
+        std::error_code ec;
+        d.name = fs::canonical(sysfs, ec).filename().string();
+    }
+    return d;
 }
 
 /// Fraction of the file's pages resident in the OS page cache (mincore). -1 on error.
@@ -203,6 +246,8 @@ RunOutput execute_run(const Options& opt, size_t run_idx, const WorkloadGenerato
         const uint64_t file_pages = store.file_manager().page_count();
         const ProcIO io0 = read_proc_io();
         const Usage u0 = read_usage();
+        const std::string sysfs = dev_sysfs_for(opt.dir);
+        const DevStat d0 = read_dev(sysfs);
 
         // RUN (measured).
         std::vector<uint32_t> lat_ns(ops.size());
@@ -221,6 +266,7 @@ RunOutput execute_run(const Options& opt, size_t run_idx, const WorkloadGenerato
         const auto t_end = std::chrono::steady_clock::now();
         const Usage u1 = read_usage();
         const ProcIO io1 = read_proc_io();
+        const DevStat d1 = read_dev(sysfs);
 
         auto& m = store.buffer_pool().metrics();
         auto& fst = store.file_manager().stats();
@@ -307,6 +353,22 @@ RunOutput execute_run(const Options& opt, size_t run_idx, const WorkloadGenerato
         add("os_write_bytes", static_cast<double>(io1.write_bytes - io0.write_bytes));
         add("syscalls_read", static_cast<double>(io1.syscr - io0.syscr));
         add("syscalls_write", static_cast<double>(io1.syscw - io0.syscw));
+        const auto rss = read_rss_mib();
+        add("rss_mib", rss[0]);
+        add("rss_anon_mib", rss[1]);
+        // Device-level view of the measured window (iostat -x equivalents).
+        add_s("dev", d1.ok ? d1.name : "n/a");
+        const double ms = elapsed * 1000.0;
+        const double dr = d1.ok ? double(d1.rd_ios - d0.rd_ios) : 0, dw = d1.ok ? double(d1.wr_ios - d0.wr_ios) : 0;
+        add("dev_reads", dr);
+        add("dev_writes", dw);
+        add("dev_read_kib", d1.ok ? (d1.rd_sectors - d0.rd_sectors) / 2.0 : 0);
+        add("dev_write_kib", d1.ok ? (d1.wr_sectors - d0.wr_sectors) / 2.0 : 0);
+        add("dev_iops", (dr + dw) / elapsed);
+        add("dev_util_pct", d1.ok ? 100.0 * (d1.io_ticks - d0.io_ticks) / ms : 0);
+        add("dev_aqu_sz", d1.ok ? (d1.time_in_queue - d0.time_in_queue) / ms : 0);
+        add("dev_r_await_ms", dr > 0 ? (d1.rd_ticks - d0.rd_ticks) / dr : 0);
+        add("dev_w_await_ms", dw > 0 ? (d1.wr_ticks - d0.wr_ticks) / dw : 0);
 
         if (!opt.trace_path.empty()) {
             std::string tp = opt.trace_path;
@@ -399,6 +461,7 @@ Workload:   --pattern=sequential|uniform|zipf|hotspot   --keys=N  --ops=N  --val
 Storage:    --pool=FRAMES | --pool-mb=MiB   --io-mode=buffered|direct
             --durability=off|sync|group  --group-commit=N  --replacer=clock|lru
 Protocol:   --cache=warm|oswarm|cold  --runs=N  --dir=PATH
+Config:     --config=FILE  (key = value lines; command-line flags override)
 Output:     --label=S  --summary=CSV  --json=PATH  --trace=CSV  --dump-ops=CSV  --quiet
 )";
     std::exit(code);
@@ -409,15 +472,17 @@ Output:     --label=S  --summary=CSV  --json=PATH  --trace=CSV  --dump-ops=CSV  
 int main(int argc, char** argv) {
     Options opt;
     try {
-        for (int i = 1; i < argc; ++i) {
-            std::string a = argv[i];
+        const ExpandedArgs args = expand_config_args(argc, argv);
+        const int nargs = static_cast<int>(args.size());
+        for (int i = 0; i < nargs; ++i) {
+            std::string a = args[i];
             std::string key = a, val;
             if (auto eq = a.find('='); eq != std::string::npos) {
                 key = a.substr(0, eq);
                 val = a.substr(eq + 1);
             } else if (a != "--scramble" && a != "--quiet" && a != "-h" && a != "--help") {
-                if (i + 1 >= argc) throw std::invalid_argument(a + " needs a value");
-                val = argv[++i];
+                if (i + 1 >= nargs) throw std::invalid_argument(a + " needs a value");
+                val = args[++i];
             }
             auto& wl = opt.wl;
             if (key == "--pattern") wl.pattern = parse_pattern(val);
