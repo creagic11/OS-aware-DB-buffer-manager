@@ -24,12 +24,13 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_library(bufferscope_core
     src/page.cpp
     src/file_manager.cpp
+    src/kv_store.cpp
 )
 target_include_directories(bufferscope_core PUBLIC
     ${PROJECT_SOURCE_DIR}/include
 )
 
-# Main executable (stub)
+# Main executable
 add_executable(bufferscope src/main.cpp)
 target_link_libraries(bufferscope bufferscope_core)
 
@@ -44,3 +45,7 @@ add_test(NAME PageTest COMMAND page_test)
 add_executable(file_manager_test tests/file_manager_test.cpp)
 target_link_libraries(file_manager_test bufferscope_core GTest::gtest_main)
 add_test(NAME FileManagerTest COMMAND file_manager_test)
+
+add_executable(kv_correctness_test tests/kv_correctness_test.cpp)
+target_link_libraries(kv_correctness_test bufferscope_core GTest::gtest_main)
+add_test(NAME KVCorrectnessTest COMMAND kv_correctness_test)
