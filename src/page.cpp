@@ -236,6 +236,13 @@ bool Page::insert_record(const std::string& key, const std::string& value) {
     return true;
 }
 
+bool Page::can_fit(size_t key_len, size_t value_len) const {
+    const size_t need = 4 + key_len + value_len;
+    const size_t new_dir_end = HEADER_SIZE + (static_cast<size_t>(header_.record_count) + 1) * sizeof(SlotEntry);
+    return need + sizeof(SlotEntry) <= MAX_PAYLOAD && header_.free_space_offset >= need &&
+           header_.free_space_offset - need >= new_dir_end;
+}
+
 std::optional<std::pair<std::string, std::string>> Page::read_record(uint16_t slot_idx) const {
     if (slot_idx >= header_.record_count) {
         return std::nullopt;

@@ -31,11 +31,11 @@ protected:
         test_file = "/tmp/bufferscope_direct_test_" +
                     std::to_string(::getpid()) + "_" +
                     std::to_string(reinterpret_cast<uintptr_t>(this)) + ".db";
-        std::filesystem::remove(test_file);
+        std::filesystem::remove(test_file); std::filesystem::remove(test_file + ".wal");
     }
 
     void TearDown() override {
-        std::filesystem::remove(test_file);
+        std::filesystem::remove(test_file); std::filesystem::remove(test_file + ".wal");
     }
 };
 
@@ -187,6 +187,6 @@ TEST_F(DirectIOTest, EquivalenceBufferedVsDirect) {
         EXPECT_EQ(*val_d, *val_b);
     }
 
-    std::filesystem::remove(direct_db);
-    std::filesystem::remove(buffered_db);
+    std::filesystem::remove(direct_db); std::filesystem::remove(direct_db + ".wal");
+    std::filesystem::remove(buffered_db); std::filesystem::remove(buffered_db + ".wal");
 }

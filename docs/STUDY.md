@@ -592,3 +592,70 @@ A reference model for a pool that never evicts only proves the page table works.
 strengthened test runs 72 scripted sequences (6 pool sizes × 4 access shapes × 3
 seeds) against an independent CLOCK/LRU simulator, with pinned pages held across
 steps, and asserts hits, misses, evictions and residency after every step.
+
+---
+
+## 12. Phase 6 As Built: WAL, Page LSNs, Full-Page Images and Crash Injection
+
+### 12.1 Why "replay the whole log" is wrong
+A first draft re-inserted every logged PUT into the pages at every startup. Pages that
+were already flushed then held the record twice, and every restart added another copy.
+Replaying a DELETE removed only one copy, so the key **came back**. Redo has to be
+*idempotent*: replaying a record that is already reflected on the page must do nothing.
+
+### 12.2 Page LSN: the idempotence key
+Every page header stores `lsn`, the LSN of the last log record applied to it. Redo rule:
+`if (page.lsn < record.lsn) { apply(record); page.lsn = record.lsn; }`. Pages are written
+whole and checksummed, so a valid page is either entirely before or entirely after a
+given record.
+
+### 12.3 Physiological records
+"Insert (k, v)" alone is not deterministic. Where does it go? Each record names
+`(page_id, slot)`. On redo, a PUT must find `record_count == slot` on its page; anything
+else means the log and the page disagree, and recovery stops loudly.
+
+### 12.4 The two orderings that make WAL work
+1. **Commit rule** — a mutation is reported successful only after its COMMIT record is
+   fdatasync'ed (`Durability::SYNC`).
+2. **WAL-before-data rule** — a page is written only after the log is durable up to
+   its LSN (the buffer pool's before-write hook calls `flush_to(page_lsn)`).
+If you break (1) you lose acknowledged writes. If you break (2) a page can contain changes
+that no surviving log record explains.
+
+### 12.5 Torn pages and full-page images
+A 4 KiB write is not atomic on most storage, so a crash can leave half old, half new.
+The checksum detects that, but redo cannot fix it, because it needs a correct base page.
+PostgreSQL's answer (`full_page_writes`) is used here: the first time a page changes after
+a checkpoint, its whole before-image goes into the WAL. Recovery restores torn or missing
+pages from that image and redoes the later records. The cost is one 4 KiB log record per
+page per checkpoint interval.
+
+### 12.6 Checkpoints
+Checkpoint = flush WAL → write all dirty pages → fdatasync data file → atomically replace
+the WAL with a single CHECKPOINT record (write temp, fdatasync, `rename`, fsync the
+directory). If the process crashes between the page fdatasync and the rename, recovery
+sees log records that are already on the pages and skips them by page LSN. That is crash
+point (c), and its test asserts `redo_applied == 0`.
+
+### 12.7 Distinct failure modes
+| Situation | Detection | Outcome |
+|---|---|---|
+| Torn/corrupt page **inside** the crash window | CRC mismatch, image in WAL | repaired from image |
+| Corrupt page **outside** the crash window | CRC mismatch, no image | `ChecksumMismatchError` |
+| Page missing but recorded at checkpoint | `page_count` < checkpoint count | `PageNotFoundError` |
+| Torn WAL tail | short record / bad CRC / LSN gap | truncated; incomplete op discarded |
+
+### 12.8 Crash injection that proves "no more, no less"
+Tests fork a child, arm one named crash point (`WAL_AFTER_FLUSH`, `PAGE_BEFORE_WRITE`,
+`PAGE_TORN_WRITE`, `CKPT_AFTER_PAGE_FLUSH`, …), and the child reports every acknowledged
+op over a pipe. When the point fires the child is killed with SIGKILL, so no destructors
+or flushes run. The parent recovers and compares against an oracle replay of exactly the
+durable prefix. One subtle case: at `WAL_AFTER_FLUSH` the op is **committed but not
+acknowledged**, so it must survive (acked + 1). Power loss is simulated separately by
+truncating the WAL at every record boundary and at points inside records.
+
+### 12.9 Durability vs. throughput
+On the secondary test machine, fdatasync per mutation costs ~130 µs, which caps a
+single thread at ~7.7 k mutations/s versus ~1.2 M op/s without a WAL. Group commit
+amortises the sync over N mutations at the cost of losing up to N−1 acknowledged ops in a
+crash. That is a trade-off to document, not a bug to hide.

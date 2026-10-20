@@ -35,9 +35,15 @@ RunResult execute_workload_run(const std::string& db_path,
                                const std::vector<Operation>& warmup_ops,
                                const std::vector<Operation>& ops,
                                size_t pool_size,
-                               IOMode mode) {
+                               IOMode mode,
+                               Durability durability) {
     std::filesystem::remove(db_path);
-    KVStore store(db_path, pool_size, mode);
+    std::filesystem::remove(KVStore::wal_path_for(db_path));
+    KVOptions o;
+    o.pool_size = pool_size;
+    o.io_mode = mode;
+    o.durability = durability;
+    KVStore store(db_path, o);
     auto apply = [&store](const Operation& op) {
         if (op.type == OpType::PUT) store.put(op.key, op.value);
         else if (op.type == OpType::GET) (void)store.get(op.key);
@@ -69,6 +75,7 @@ RunResult execute_workload_run(const std::string& db_path,
     res.mean_us = latency.mean();
     res.stddev_us = latency.stddev();
     std::filesystem::remove(db_path);
+    std::filesystem::remove(KVStore::wal_path_for(db_path));
     return res;
 }
 
@@ -80,6 +87,7 @@ int main(int argc, char* argv[]) {
     std::string db_dir = "/tmp";
     IOMode mode = IOMode::BUFFERED;
     std::string mode_str = "buffered";
+    Durability durability = Durability::OFF;  // Phase 4/5 baseline: no WAL
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -88,6 +96,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "--runs" && i + 1 < argc) num_runs = std::stoul(argv[++i]);
         else if (arg == "--pool" && i + 1 < argc) pool_size = std::stoul(argv[++i]);
         else if (arg == "--dir" && i + 1 < argc) db_dir = argv[++i];
+        else if (arg.rfind("--durability=", 0) == 0) durability = parse_durability(arg.substr(13));
         else if (arg == "--io-mode" && i + 1 < argc) {
             mode_str = argv[++i];
             mode = parse_io_mode(mode_str);
@@ -107,6 +116,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  Key space size:     " << key_space << " keys\n";
     std::cout << "  Buffer pool size:   " << pool_size << " frames (" << (pool_size * 4) << " KiB)\n";
     std::cout << "  Number of runs:     " << num_runs << "\n";
+    std::cout << "  Durability (WAL):   " << durability_name(durability) << "\n";
     std::cout << "  Database directory: " << db_dir << "\n";
     std::cout << "--------------------------------------------------------\n\n";
 
@@ -154,7 +164,7 @@ int main(int argc, char* argv[]) {
     std::vector<double> p99_list;
 
     for (size_t r = 1; r <= num_runs; ++r) {
-        RunResult res = execute_workload_run(bench_file, warmup_ops, ops, pool_size, mode);
+        RunResult res = execute_workload_run(bench_file, warmup_ops, ops, pool_size, mode, durability);
         results.push_back(res);
         iops_list.push_back(res.iops);
         p50_list.push_back(res.p50_us);

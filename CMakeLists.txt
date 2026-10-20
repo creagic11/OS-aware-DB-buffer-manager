@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(BufferScope VERSION 0.5.0 LANGUAGES CXX)
+project(BufferScope VERSION 0.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,6 +32,9 @@ add_library(bufferscope_core
     src/clock_replacer.cpp
     src/buffer_pool.cpp
     src/kv_store.cpp
+    src/wal.cpp
+    src/recovery.cpp
+    src/crash.cpp
 )
 target_include_directories(bufferscope_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
@@ -75,3 +78,5 @@ bufferscope_test(clock_replacer_test        tests/clock_replacer_test.cpp)
 bufferscope_test(buffer_pool_eviction_test  tests/buffer_pool_eviction_test.cpp)
 bufferscope_test(direct_io_test             tests/direct_io_test.cpp)
 bufferscope_test(io_mode_correctness_test   tests/io_mode_correctness_test.cpp)
+bufferscope_test(wal_recovery_test          tests/wal_recovery_test.cpp)
+bufferscope_test(crash_injection_test       tests/crash_injection_test.cpp)

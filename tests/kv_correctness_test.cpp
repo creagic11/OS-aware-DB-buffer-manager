@@ -31,11 +31,11 @@ protected:
         test_file = "/tmp/bufferscope_kv_test_" +
                     std::to_string(::getpid()) + "_" +
                     std::to_string(reinterpret_cast<uintptr_t>(this)) + ".db";
-        std::filesystem::remove(test_file);
+        std::filesystem::remove(test_file); std::filesystem::remove(test_file + ".wal");
     }
 
     void TearDown() override {
-        std::filesystem::remove(test_file);
+        std::filesystem::remove(test_file); std::filesystem::remove(test_file + ".wal");
     }
 };
 

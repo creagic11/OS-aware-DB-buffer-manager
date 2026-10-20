@@ -106,9 +106,9 @@ protected:
     std::string path;
     void SetUp() override {
         path = "/tmp/bufferscope_refmodel_" + std::to_string(::getpid()) + ".db";
-        std::filesystem::remove(path);
+        std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
     }
-    void TearDown() override { std::filesystem::remove(path); }
+    void TearDown() override { std::filesystem::remove(path); std::filesystem::remove(path + ".wal"); }
 };
 
 }  // namespace
@@ -122,7 +122,7 @@ TEST_P(BufferPoolReferenceTest, DozensOfScriptedSequencesMatchModel) {
     for (size_t pool : {1u, 2u, 3u, 4u, 8u, 16u}) {
         for (int shape = 0; shape < 4; ++shape) {
             for (int rep = 0; rep < 3; ++rep) {
-                std::filesystem::remove(path);
+                std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
                 FileManager fm(path);
                 BufferPoolManager bpm(pool, fm, type);
                 ReferenceModel model(pool, type);

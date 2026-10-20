@@ -95,6 +95,9 @@ public:
     // Returns true on success, false if page is full.
     bool insert_record(const std::string& key, const std::string& value);
 
+    // True if insert_record(key, value) would succeed (no mutation).
+    bool can_fit(size_t key_len, size_t value_len) const;
+
     // Read a record at a given slot index.
     std::optional<std::pair<std::string, std::string>> read_record(uint16_t slot_idx) const;
 

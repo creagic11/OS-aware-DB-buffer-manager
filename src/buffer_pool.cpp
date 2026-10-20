@@ -1,9 +1,12 @@
 #include "bufferscope/buffer_pool.hpp"
 
+#include "bufferscope/crash.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
+#include <unistd.h>
 
 namespace bufferscope {
 
@@ -80,8 +83,7 @@ void BufferPoolManager::write_back(Frame& frame) {
         auto it = page_table_.find(q);
         if (it != page_table_.end()) {
             Frame& other = frames_[it->second];
-            stamp_page_checksum(other.data);
-            fm_.write_raw_aligned(q, other.data);  // keeps its dirty flag
+            write_frame_bytes(q, other.data);  // keeps its dirty flag
         } else {
             alignas(IO_ALIGNMENT) std::byte empty[PAGE_SIZE];
             Page fresh(q);
@@ -90,11 +92,24 @@ void BufferPoolManager::write_back(Frame& frame) {
         }
         metrics_.record_bytes_written(PAGE_SIZE);
     }
-    stamp_page_checksum(frame.data);
-    fm_.write_raw_aligned(frame.page_id, frame.data);
+    write_frame_bytes(frame.page_id, frame.data);
     metrics_.record_bytes_written(PAGE_SIZE);
     metrics_.record_flush();
     frame.dirty = false;
+}
+
+void BufferPoolManager::write_frame_bytes(uint32_t page_id, std::byte* data) {
+    // WAL rule: the log must be durable up to this page's LSN first.
+    if (before_page_write_) before_page_write_(page_lsn_of(data));
+    stamp_page_checksum(data);
+    crash_point(CrashPoint::PAGE_BEFORE_WRITE);
+    if (crash_point(CrashPoint::PAGE_TORN_WRITE)) {
+        // Simulated torn write: only the first half of the page reaches the kernel.
+        ssize_t n = ::pwrite(fm_.fd(), data, PAGE_SIZE / 2, FileManager::page_offset(page_id));
+        (void)n;
+        die_now();
+    }
+    fm_.write_raw_aligned(page_id, data);
 }
 
 void BufferPoolManager::release_frame(size_t frame_id) {

@@ -19,6 +19,7 @@ using namespace bufferscope;
 
 static int usage() {
     std::cerr << "usage: bufferscope [--db PATH] [--io-mode=buffered|direct] [--pool N]\n"
+                 "                   [--durability=sync|group|off]\n"
                  "                   (put KEY VALUE | get KEY | del KEY | stats)\n";
     return 2;
 }
@@ -27,6 +28,7 @@ int main(int argc, char** argv) {
     std::string db = "data/bufferscope.db";
     IOMode mode = IOMode::BUFFERED;
     size_t pool = 128;
+    Durability durability = Durability::SYNC;
     std::vector<std::string> cmd;
 
     try {
@@ -40,6 +42,7 @@ int main(int argc, char** argv) {
             if (a == "--db" || a.rfind("--db=", 0) == 0) db = value("--db");
             else if (a == "--io-mode" || a.rfind("--io-mode=", 0) == 0) mode = parse_io_mode(value("--io-mode"));
             else if (a == "--pool" || a.rfind("--pool=", 0) == 0) pool = std::stoul(value("--pool"));
+            else if (a == "--durability" || a.rfind("--durability=", 0) == 0) durability = parse_durability(value("--durability"));
             else if (a == "-h" || a == "--help") return usage();
             else cmd.push_back(a);
         }
@@ -47,7 +50,11 @@ int main(int argc, char** argv) {
 
         auto parent = std::filesystem::path(db).parent_path();
         if (!parent.empty()) std::filesystem::create_directories(parent);
-        KVStore store(db, pool, mode);
+        KVOptions o;
+        o.pool_size = pool;
+        o.io_mode = mode;
+        o.durability = durability;
+        KVStore store(db, o);
 
         if (cmd[0] == "put" && cmd.size() == 3) {
             store.put(cmd[1], cmd[2]);
@@ -66,7 +73,8 @@ int main(int argc, char** argv) {
             const auto& m = store.buffer_pool().metrics();
             std::cout << "db=" << db << " io_mode=" << io_mode_name(mode) << " pool_frames=" << pool
                       << " pages=" << store.file_manager().page_count() << " live_keys=" << store.size()
-                      << " startup_misses=" << m.get_misses() << "\n";
+                      << " startup_misses=" << m.get_misses() << " durability=" << durability_name(durability)
+                      << "\nrecovery: " << store.recovery_report().summary() << "\n";
         } else {
             return usage();
         }

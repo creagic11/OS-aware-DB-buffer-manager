@@ -31,11 +31,11 @@ protected:
                     std::to_string(::getpid()) + "_" +
                     std::to_string(reinterpret_cast<uintptr_t>(this)) + ".db";
         // Remove if leftover from a previous run
-        std::filesystem::remove(test_file);
+        std::filesystem::remove(test_file); std::filesystem::remove(test_file + ".wal");
     }
 
     void TearDown() override {
-        std::filesystem::remove(test_file);
+        std::filesystem::remove(test_file); std::filesystem::remove(test_file + ".wal");
     }
 };
 

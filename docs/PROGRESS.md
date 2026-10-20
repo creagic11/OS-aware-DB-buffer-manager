@@ -16,8 +16,8 @@
 | 3 | CLOCK Replacement & Dirty Flushing | ✅ Done (reviewed) | Hot/cold, full-pool, all-pinned, dirty-flush tests | `clock_replacer_test`, `buffer_pool_eviction_test`, `buffer_pool_reference_test` |
 | 4 | Buffered Baseline & Bench Harness | ✅ Done (reviewed, runner fixed) | Stable baseline | `bench_runner` (5 runs, CoV reported), `micro_bench` |
 | 5 | Direct I/O Path | ✅ Done (reviewed, metrics wired) | Correctness identical on both paths; alignment errors diagnosable | `direct_io_test`, `io_mode_correctness_test` |
-| 6 | WAL + Recovery | ⏳ Next | Injected crashes recover committed data | — |
-| 7 | Workload Framework | ⬜ Pending | Deterministic, machine-readable workloads | — |
+| 6 | WAL + Recovery | ✅ Done | Injected crashes recover committed data | `wal_recovery_test` (13), `crash_injection_test` (11 scenarios × 2 I/O modes) |
+| 7 | Workload Framework | ⏳ Next | Deterministic, machine-readable workloads | — |
 | 8 | Comparative Experiments | ⬜ Pending | ≥ 5 experiments with p50/p99 + IOPS | — |
 | 9 | Polish & Freeze | ⬜ Pending | Fresh clone runs the suite with one command | — |
 
@@ -94,3 +94,65 @@ flush-before-reuse, all-pinned returns `nullptr` without evicting.
 `IOMode::DIRECT` (`O_DIRECT`), 4096-byte aligned transfers, `DirectIOAlignmentError`
 for kernel `EINVAL`, identical metrics on both paths, `--io-mode=buffered|direct`
 on `bench_runner` and `bufferscope`.
+
+### Phase 6 — WAL + Recovery ✅
+
+**Prior draft rejected.** `create_phase6.py` (run in WSL, never verified) replayed the
+*entire* WAL into the pages on every startup with no page-LSN check. Each restart
+re-inserted every record (unbounded duplication), and replaying a DELETE removed only
+one of the duplicates, so deleted keys could reappear. It also had no crash-injection
+points or torn-page handling. Phase 6 was re-implemented from scratch.
+
+**Design (ARIES-style redo, no undo needed):**
+- `include/bufferscope/wal.hpp`, `src/wal.cpp` — `LogManager`. 32-byte CRC32-protected
+  record header; record types CHECKPOINT / PAGE_IMAGE / PUT / TOMBSTONE; LSN +1 per
+  record; COMMIT flag on the last record of each KV operation. Records are buffered in user
+  space; `flush()` = `write` + `fdatasync`. Torn tail (short / bad CRC / LSN gap) is
+  detected and truncated on open. Checkpoint swaps in a new log atomically (temp file,
+  fdatasync, rename, fsync dir).
+- **Physiological logging**: PUT/TOMBSTONE name `(page_id, slot)`. Redo applies
+  record L to page P only if `P.lsn < L`, so redo is idempotent.
+- **WAL rule**: the buffer pool calls a before-write hook with the page LSN, and
+  `LogManager::flush_to(lsn)` runs before any page reaches disk.
+- **Atomic multi-record ops**: a PUT that overwrites pins both pages *before* logging,
+  so no eviction (and no partial WAL flush) can split its tombstone+put. Recovery ignores
+  a trailing op that has no COMMIT.
+- **Full-page images** (PostgreSQL-style): the first change to a page after a checkpoint
+  logs its 4 KiB before-image, and so does every new page. Recovery repairs torn or missing
+  pages from these images.
+- `include/bufferscope/recovery.hpp`, `src/recovery.cpp` — `RecoveryManager`.
+  Analysis, then page validation (magic, CRC32, page id), then repair, then redo, then
+  write-back + fdatasync, then checkpoint. The failure paths stay distinct: checksum
+  mismatch with no image → `ChecksumMismatchError`; a page that is missing but was
+  recorded at the checkpoint → `PageNotFoundError`; wrong id → `PageIdMismatchError`.
+- **Durability granularity** (`KVOptions::durability`): `sync` (fdatasync per mutation,
+  the default; a returned call is durable), `group` (every N mutations; up to N−1
+  acknowledged ops can be lost), `off` (no WAL; Phase 1–5 behaviour, refuses to open a
+  database whose WAL is not checkpointed). Measured cost on the secondary environment
+  (`bench_runner --runs 2`, 50/40/10 mix): sync 7,694 ± 87 op/s, p50 132 µs, vs
+  ~1.17 M op/s with `off`. The fdatasync dominates.
+- `include/bufferscope/crash.hpp`, `src/crash.cpp` — named crash points; when one
+  fires the process is killed with SIGKILL.
+
+**Crash-injection evidence** (`tests/crash_injection_test.cpp`, both I/O modes, forked
+child killed by SIGKILL, recovered state compared to an oracle):
+
+| Spec point | Test | Expected = observed |
+|---|---|---|
+| (a) after WAL append, before page flush | `WalDurableBeforePageFlush` (3 positions) | acked + 1 ops (committed but not yet acknowledged), redo_skipped = 0 |
+| (b) before any page flush | `BeforeAnyPageFlushLargePool`, `BeforeFirstEvictionWriteTinyPool` | all acked ops, rebuilt from WAL alone |
+| (c) after page flush, before checkpoint metadata | `AfterPageFlushBeforeCheckpoint` | all ops; redo_applied = 0, redo_skipped > 0 (idempotent) |
+| eviction write-backs | `SweepEvictionWriteBacks` (5 positions) | acked ops |
+| torn page | `TornPageWriteRepairedFromImage` (12 positions), `TornPageDuringCheckpoint` | invalid pages = pages repaired; acked ops |
+| un-flushed append | `UnflushedAppendIsLost` | acked ops |
+| group commit | `GroupCommitLosesOnlyUnflushedTail` | ops up to the last durable flush (< acked) |
+| power loss in WAL | `WalTruncationAtEveryBoundary` | ops whose COMMIT lies before the cut |
+| repeated crashes | `RepeatedCrashRecoverCycles` | acked ops after each of 4 cycles |
+
+Corruption outside a crash window → `ChecksumMismatchError` (never repaired silently);
+truncated data file → `PageNotFoundError`. Every suite passes under ASan+UBSan and in
+Release, and the crash suites were repeated 5× with no flakes.
+
+**Known limitations:** single-threaded; deleted record space is never reclaimed (a
+tombstone keeps its slot); a corrupt record in the middle of the WAL is treated as the
+end of the log (the same as PostgreSQL).

@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -93,6 +94,13 @@ public:
     /// Number of frames currently pinned (diagnostics / tests).
     size_t pinned_frames() const;
 
+    /// Write-ahead hook, called with a page's LSN right before that page is
+    /// written to disk. The WAL uses it to enforce "log durable up to page LSN
+    /// before the page reaches disk".
+    void set_before_page_write(std::function<void(uint64_t page_lsn)> hook) {
+        before_page_write_ = std::move(hook);
+    }
+
 private:
     size_t pool_size_;
     FileManager& fm_;
@@ -103,6 +111,9 @@ private:
     CacheMetrics metrics_;
     uint64_t access_counter_ = 0;
     uint32_t num_pages_ = 0;  // max(page_count on disk, highest page id handed out + 1)
+    std::function<void(uint64_t)> before_page_write_;
+
+    void write_frame_bytes(uint32_t page_id, std::byte* data);
 
     std::optional<size_t> find_available_frame();
     void write_back(Frame& frame);

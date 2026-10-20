@@ -32,9 +32,9 @@ protected:
     void SetUp() override {
         path = "/tmp/bufferscope_iomode_" + std::to_string(::getpid()) + "_" +
                io_mode_name(GetParam()) + ".db";
-        std::filesystem::remove(path);
+        std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
     }
-    void TearDown() override { std::filesystem::remove(path); }
+    void TearDown() override { std::filesystem::remove(path); std::filesystem::remove(path + ".wal"); }
 
     void corrupt_byte(off_t off) {
         std::fstream f(path, std::ios::in | std::ios::out | std::ios::binary);
@@ -163,30 +163,30 @@ TEST(ReviewRegression, OversizedRecordRejectedNotTruncated) {
     EXPECT_EQ(p.free_space(), 0u);
 
     std::string path = "/tmp/bufferscope_oversize_" + std::to_string(::getpid()) + ".db";
-    std::filesystem::remove(path);
+    std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
     {
         KVStore s(path);
         EXPECT_THROW(s.put("k", std::string(70000, 'v')), std::invalid_argument);
         EXPECT_NO_THROW(s.put("k", std::string(MAX_KV_BYTES - 1, 'v')));
         EXPECT_EQ(s.get("k")->size(), MAX_KV_BYTES - 1);
     }
-    std::filesystem::remove(path);
+    std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
 }
 
 TEST(ReviewRegression, MissingPageIsDistinctFromChecksumMismatch) {
     std::string path = "/tmp/bufferscope_missing_" + std::to_string(::getpid()) + ".db";
-    std::filesystem::remove(path);
+    std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
     FileManager fm(path);
     Page p(0u);
     fm.write_page(p);
     EXPECT_THROW(fm.read_page(5), PageNotFoundError);
     EXPECT_NO_THROW(fm.read_page_verified(0));
-    std::filesystem::remove(path);
+    std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
 }
 
 TEST(ReviewRegression, DirectIOMisalignedOffsetIsEINVAL) {
     std::string path = "/tmp/bufferscope_misoff_" + std::to_string(::getpid()) + ".db";
-    std::filesystem::remove(path);
+    std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
     FileManager fm(path, IOMode::DIRECT);
     alignas(4096) std::byte buf[PAGE_SIZE] = {};
     // Aligned buffer, aligned length, misaligned file offset.
@@ -199,5 +199,5 @@ TEST(ReviewRegression, DirectIOMisalignedOffsetIsEINVAL) {
     EXPECT_EQ(errno, EINVAL);
     // Our API never issues those; a misaligned *buffer* surfaces as the typed error.
     EXPECT_THROW(fm.write_raw_aligned(0, buf + 8), DirectIOAlignmentError);
-    std::filesystem::remove(path);
+    std::filesystem::remove(path); std::filesystem::remove(path + ".wal");
 }
