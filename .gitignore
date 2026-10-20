@@ -1,0 +1,10 @@
+build/
+build-*/
+data/
+results/raw/*.tmp
+__pycache__/
+*.db
+*.wal
+*.pyc
+.vscode/
+.idea/
