@@ -47,8 +47,8 @@ device saturation.
 **Equal memory budgets (e3, e5 constrained, e6).** With 7 GiB of RAM the OS page cache
 would hold any test dataset. Buffered I/O then always looks ideal, which is the
 "buffered and direct look the same" trap. These experiments therefore run each
-configuration inside a memory cgroup capped at *calibrated base RSS* (measured with a
-16-frame pool; mostly the in-memory key index) **+ budget + 4 MiB slack**:
+configuration inside a memory cgroup capped at *calibrated peak RSS* (`VmHWM`, measured with a
+16-frame pool; mostly the in-memory key index) **+ budget + 8 MiB slack**:
 * `os`: a 16-frame pool, so the page cache gets the budget;
 * `pool`: the pool gets the whole budget, counted at the real **8 KiB per frame**
   (`sizeof(Frame)`, see Finding F1);

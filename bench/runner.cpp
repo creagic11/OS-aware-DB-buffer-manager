@@ -114,16 +114,17 @@ Usage read_usage() {
     return u;
 }
 
-/// Resident set (MiB) from /proc/self/status: {VmRSS, RssAnon, RssFile}.
-std::array<double, 3> read_rss_mib() {
+/// Resident set (MiB) from /proc/self/status: {VmRSS, RssAnon, RssFile, VmHWM (peak)}.
+std::array<double, 4> read_rss_mib() {
     std::ifstream f("/proc/self/status");
     std::string k;
-    std::array<double, 3> r{0, 0, 0};
+    std::array<double, 4> r{0, 0, 0, 0};
     while (f >> k) {
         double kb;
         if (k == "VmRSS:" && f >> kb) r[0] = kb / 1024;
         else if (k == "RssAnon:" && f >> kb) r[1] = kb / 1024;
         else if (k == "RssFile:" && f >> kb) r[2] = kb / 1024;
+        else if (k == "VmHWM:" && f >> kb) r[3] = kb / 1024;
     }
     return r;
 }
@@ -356,6 +357,7 @@ RunOutput execute_run(const Options& opt, size_t run_idx, const WorkloadGenerato
         const auto rss = read_rss_mib();
         add("rss_mib", rss[0]);
         add("rss_anon_mib", rss[1]);
+        add("rss_peak_mib", rss[3]);  // process high-water mark (includes load phase)
         // Device-level view of the measured window (iostat -x equivalents).
         add_s("dev", d1.ok ? d1.name : "n/a");
         const double ms = elapsed * 1000.0;

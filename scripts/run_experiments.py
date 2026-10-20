@@ -39,7 +39,7 @@ HEADER = 32
 KEY_LEN = 11  # "k%010u"
 TINY_POOL = 16
 FRAME_BYTES = 8192  # sizeof(Frame): canonical layout pads 4 KiB data + metadata to 8 KiB
-SLACK_MIB = 4
+SLACK_MIB = 8
 
 # bench_runner flags that may appear in the config
 FLAGS = {
@@ -186,6 +186,8 @@ def expand(exp: dict, defaults: dict) -> list[dict]:
                 x_label = str(value)
                 x_value = value
             p.update({k: v for k, v in s.items() if k != "name"})
+            if "pool" in s:
+                p["_explicit_pool"] = True
             runs.append({"params": p, "series": s["name"], "x_label": x_label, "x_value": x_value})
     return runs
 
@@ -209,6 +211,9 @@ def resolve(p: dict) -> tuple[dict, float | None]:
         if use == "os":
             p["pool"] = TINY_POOL
             p.pop("pool_ratio", None)
+        if p.pop("_explicit_pool", False):  # a series' own `pool` beats a base pool_ratio
+            p.pop("pool_ratio", None)
+            p.pop("pool_mib", None)
         if "pool_ratio" in p:
             p["pool"] = max(2, round(float(p.pop("pool_ratio")) * pages))
         if "pool_mib" in p:
@@ -220,7 +225,7 @@ def resolve(p: dict) -> tuple[dict, float | None]:
 def command(runner: Path, p: dict, data_dir: Path, json_out: Path, label: str) -> list[str]:
     cmd = [str(runner), f"--dir={data_dir}", f"--json={json_out}", f"--label={label}", "--quiet"]
     for k, v in p.items():
-        if k.startswith("_") or k in COMPUTED:
+        if k.startswith("_") or k in COMPUTED:  # internal / computed keys
             continue
         if k in BOOL_FLAGS:
             if v:
@@ -241,9 +246,11 @@ def calibrate_base_rss(runner: Path, p: dict, data_dir: Path, tmp: Path, cache: 
               "durability": "off", "io_mode": "buffered"})
     out = tmp / "calib.json"
     subprocess.run(command(runner, q, data_dir, out, "calibration"), check=True)
-    base = json.loads(out.read_text())["runs"][0]["rss_anon_mib"]
+    # Peak (VmHWM), not the end-of-run RSS: the key index's hash table rehashes during
+    # the load phase and briefly needs more memory than it holds afterwards.
+    base = json.loads(out.read_text())["runs"][0]["rss_peak_mib"]
     cache[key] = base
-    log(f"  calibrated base anon RSS for keys={key[0]}: {base:.1f} MiB")
+    log(f"  calibrated base peak RSS for keys={key[0]}: {base:.1f} MiB")
     return base
 
 
@@ -314,6 +321,7 @@ def main() -> int:
                         continue
                     base = calibrate_base_rss(runner, p, data_dir, tmp, calib)
                     limit = base + budget + SLACK_MIB
+                    json_out.unlink(missing_ok=True)
                     cg.set_limit_mib(limit)
                     cg.reset_peak()
                     cmd = cg.wrap(cmd)
@@ -326,8 +334,10 @@ def main() -> int:
                     f"io={p.get('io_mode')} runs={p.get('runs')}" + (f" cgroup={limit:.0f}MiB" if limit else ""))
                 t0 = time.time()
                 res = subprocess.run(cmd, capture_output=True, text=True)
-                if res.returncode != 0:
-                    log(f"  FAILED rc={res.returncode}: {res.stderr.strip()[-400:]}")
+                # perf stat can mask a child killed by a signal; trust the output file.
+                if res.returncode != 0 or not json_out.exists():
+                    log(f"  FAILED rc={res.returncode} (missing output; OOM in cgroup?): "
+                        f"{res.stderr.strip()[-400:]}")
                     continue
                 data = json.loads(json_out.read_text())
                 for r in data["runs"]:
