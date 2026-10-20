@@ -26,14 +26,18 @@
 | **Mount**       | /dev/sdc on / (rw,relatime,discard)              |
 | **Free Space**  | ~951 GB                                          |
 
+## Direct I/O (O_DIRECT) Alignment Requirements
+
+| Property                     | Measured Value                                   |
+|------------------------------|--------------------------------------------------|
+| **Logical Sector Size**      | 512 bytes (`/sys/block/sdc/queue/logical_block_size`) |
+| **Physical Sector Size**     | 4096 bytes (`/sys/block/sdc/queue/physical_block_size`) |
+| **Enforced Frame Alignment** | 4096 bytes (`alignas(4096) std::byte data[4096]`) |
+| **O_DIRECT Support Status**  | Verified functional (`open` with `O_DIRECT` confirmed on `/dev/sdc`) |
+| **Misalignment Behavior**    | Kernel returns `-1` (`errno == EINVAL`)           |
+
 ## Notes
 
-- **WSL2 environment**: Running on Windows Subsystem for Linux 2. The virtual
-  disk is backed by a VHDX file on the host's NVMe SSD. I/O latency and
-  throughput may differ from a bare-metal Linux installation.
-- **O_DIRECT support**: Will be verified in Phase 5. ext4 on WSL2 generally
-  supports O_DIRECT, but this needs explicit testing.
-- **perf**: Available at `/usr/local/bin/perf`. May have limited functionality
-  under WSL2 due to the virtualized kernel.
-- **iostat/pidstat**: Available via sysstat package. Will be used for
-  storage-device-level metrics in Phase 8.
+- **WSL2 environment**: Running on Windows Subsystem for Linux 2. The virtual disk is backed by a VHDX file on the host's NVMe SSD.
+- **O_DIRECT support**: Verified on ext4. Alignment to 4096 bytes satisfies both logical (512 B) and physical (4096 B) sector sizes.
+- **iostat/pidstat**: Confirmed working (`sysstat` package) for storage-level telemetry.

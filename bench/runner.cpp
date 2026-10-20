@@ -1,9 +1,6 @@
 /**
  * @file runner.cpp
- * @brief End-to-end benchmark runner and microbenchmark suite (Phase 4).
- *
- * Runs repeatable workloads against KVStore with ordinary buffered POSIX I/O.
- * Measures throughput (IOPS), latency percentiles (p50, p90, p99), and variance across runs.
+ * @brief Benchmark runner supporting both BUFFERED and DIRECT I/O modes (Phase 4 & 5).
  */
 
 #include "bufferscope/kv_store.hpp"
@@ -32,8 +29,9 @@ struct RunResult {
 
 RunResult execute_workload_run(const std::string& db_path,
                              const std::vector<Operation>& ops,
-                             size_t pool_size) {
-    KVStore store(db_path, pool_size);
+                             size_t pool_size,
+                             IOMode mode) {
+    KVStore store(db_path, pool_size, mode);
     LatencyTracker latency;
     latency.reserve(ops.size());
 
@@ -76,8 +74,10 @@ int main(int argc, char* argv[]) {
     size_t num_ops = 50000;
     size_t key_space = 1000;
     size_t num_runs = 5;
-    size_t pool_size = 128;  // 128 pages = 512 KiB buffer pool
+    size_t pool_size = 128;
     std::string db_dir = "/tmp";
+    IOMode mode = IOMode::BUFFERED;
+    std::string mode_str = "buffered";
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -86,12 +86,23 @@ int main(int argc, char* argv[]) {
         else if (arg == "--runs" && i + 1 < argc) num_runs = std::stoul(argv[++i]);
         else if (arg == "--pool" && i + 1 < argc) pool_size = std::stoul(argv[++i]);
         else if (arg == "--dir" && i + 1 < argc) db_dir = argv[++i];
+        else if (arg == "--io-mode" && i + 1 < argc) {
+            mode_str = argv[++i];
+            if (mode_str == "direct") mode = IOMode::DIRECT;
+            else mode = IOMode::BUFFERED;
+        } else if (arg.rfind("--io-mode=", 0) == 0) {
+            mode_str = arg.substr(10);
+            if (mode_str == "direct") mode = IOMode::DIRECT;
+            else mode = IOMode::BUFFERED;
+        }
     }
 
     std::cout << "========================================================\n";
-    std::cout << "  BufferScope Benchmark Harness: Phase 4 Buffered Baseline\n";
+    std::cout << "  BufferScope Benchmark Harness (I/O Mode: "
+              << (mode == IOMode::DIRECT ? "O_DIRECT" : "BUFFERED") << ")\n";
     std::cout << "========================================================\n";
     std::cout << "Configuration:\n";
+    std::cout << "  I/O Mode:           " << (mode == IOMode::DIRECT ? "DIRECT (O_DIRECT)" : "BUFFERED (OS Page Cache)") << "\n";
     std::cout << "  Operations per run: " << num_ops << "\n";
     std::cout << "  Key space size:     " << key_space << " keys\n";
     std::cout << "  Buffer pool size:   " << pool_size << " frames (" << (pool_size * 4) << " KiB)\n";
@@ -123,11 +134,11 @@ int main(int argc, char* argv[]) {
     warmup_cfg.num_operations = 5000;
     WorkloadGenerator warmup_gen(warmup_cfg);
     auto warmup_ops = warmup_gen.generate();
-    execute_workload_run(bench_file, warmup_ops, pool_size);
+    execute_workload_run(bench_file, warmup_ops, pool_size, mode);
     std::cout << " Warm-up completed.\n\n";
 
     // Measured Steady-State Benchmark Runs
-    std::cout << "[3/3] Executing " << num_runs << " benchmark runs to establish baseline...\n\n";
+    std::cout << "[3/3] Executing " << num_runs << " benchmark runs...\n\n";
     std::cout << std::setw(6) << "Run #"
               << std::setw(12) << "Time (s)"
               << std::setw(14) << "Throughput"
@@ -144,7 +155,7 @@ int main(int argc, char* argv[]) {
     std::vector<double> p99_list;
 
     for (size_t r = 1; r <= num_runs; ++r) {
-        RunResult res = execute_workload_run(bench_file, ops, pool_size);
+        RunResult res = execute_workload_run(bench_file, ops, pool_size, mode);
         results.push_back(res);
         iops_list.push_back(res.iops);
         p50_list.push_back(res.p50_us);
@@ -162,7 +173,6 @@ int main(int argc, char* argv[]) {
 
     std::cout << std::string(80, '-') << "\n\n";
 
-    // Compute Summary Statistics Across Runs
     auto calc_mean_std = [](const std::vector<double>& v) {
         double m = std::accumulate(v.begin(), v.end(), 0.0) / v.size();
         double acc = 0.0;
@@ -175,10 +185,10 @@ int main(int argc, char* argv[]) {
     auto [p50_mean, p50_std] = calc_mean_std(p50_list);
     auto [p99_mean, p99_std] = calc_mean_std(p99_list);
 
-    double iops_cov = (iops_std / iops_mean) * 100.0;  // Coefficient of variation
+    double iops_cov = (iops_std / iops_mean) * 100.0;
 
     std::cout << "========================================================\n";
-    std::cout << "  Buffered I/O Baseline Summary Statistics\n";
+    std::cout << "  Summary Statistics (" << (mode == IOMode::DIRECT ? "O_DIRECT" : "BUFFERED") << ")\n";
     std::cout << "========================================================\n";
     std::cout << "Throughput (IOPS): " << std::fixed << std::setprecision(1)
               << iops_mean << " ± " << iops_std << " op/s  (CoV: " << iops_cov << "%)\n";
@@ -186,13 +196,8 @@ int main(int argc, char* argv[]) {
               << p50_mean << " ± " << p50_std << " us\n";
     std::cout << "p99 Latency:       " << std::fixed << std::setprecision(2)
               << p99_mean << " ± " << p99_std << " us\n";
-    std::cout << "Baseline Stability: "
-              << (iops_cov < 10.0 ? "EXCELLENT (<10% CoV, stable baseline established)"
-                                  : "MODERATE (exceeds 10% CoV)")
-              << "\n";
     std::cout << "========================================================\n";
 
-    // Clean up
     std::filesystem::remove(bench_file);
     return 0;
 }

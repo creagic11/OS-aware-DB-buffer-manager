@@ -78,3 +78,7 @@ add_test(NAME ClockReplacerTest COMMAND clock_replacer_test)
 add_executable(buffer_pool_eviction_test tests/buffer_pool_eviction_test.cpp)
 target_link_libraries(buffer_pool_eviction_test bufferscope_core GTest::gtest_main)
 add_test(NAME BufferPoolEvictionTest COMMAND buffer_pool_eviction_test)
+
+add_executable(direct_io_test tests/direct_io_test.cpp)
+target_link_libraries(direct_io_test bufferscope_core GTest::gtest_main)
+add_test(NAME DirectIOTest COMMAND direct_io_test)

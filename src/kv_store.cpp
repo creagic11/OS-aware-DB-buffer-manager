@@ -4,8 +4,8 @@
 
 namespace bufferscope {
 
-KVStore::KVStore(const std::string& filepath, size_t pool_size)
-    : fm_(filepath, IOMode::BUFFERED),
+KVStore::KVStore(const std::string& filepath, size_t pool_size, IOMode mode)
+    : fm_(filepath, mode),
       bpm_(std::make_unique<BufferPoolManager>(pool_size, fm_)) {
     rebuild_index();
 }
@@ -41,7 +41,6 @@ void KVStore::rebuild_index() {
     for (uint32_t pid = 0; pid < count; ++pid) {
         Frame* frame = bpm_->fetch_page(pid);
         if (!frame) {
-            // If pool size is smaller than total pages during scan, read direct
             Page page = fm_.read_page(pid);
             if (!page.verify_checksum()) {
                 throw std::runtime_error("KVStore: Checksum verification failed on page " +
@@ -86,7 +85,6 @@ bool KVStore::put(const std::string& key, const std::string& value) {
         throw std::invalid_argument("KVStore: Record size exceeds page capacity");
     }
 
-    // If key exists, tombstone old slot via BufferPoolManager
     auto existing_loc = index_.get(key);
     if (existing_loc.has_value()) {
         Frame* old_frame = bpm_->fetch_page(existing_loc->page_id);
@@ -97,14 +95,13 @@ bool KVStore::put(const std::string& key, const std::string& value) {
             std::memcpy(old_frame->data, old_page.data(), PAGE_SIZE);
             bpm_->unpin_page(existing_loc->page_id, true);
         } else {
-            // Direct file fallback
             Page old_page = fm_.read_page(existing_loc->page_id);
             old_page.delete_record(existing_loc->slot_idx);
+            old_page.update_checksum();
             fm_.write_page(old_page);
         }
     }
 
-    // Insert into active page via BufferPoolManager
     Frame* active_frame = bpm_->fetch_page(active_page_id_);
     if (!active_frame) {
         uint32_t new_pid = 0;
@@ -115,7 +112,6 @@ bool KVStore::put(const std::string& key, const std::string& value) {
 
     Page active_page(active_frame->data);
     if (!active_page.insert_record(key, value)) {
-        // Active page full -> unpin active page and allocate new page
         bpm_->unpin_page(active_page_id_, false);
 
         uint32_t new_pid = 0;
@@ -152,7 +148,6 @@ std::optional<std::string> KVStore::get(const std::string& key) {
 
     Frame* frame = bpm_->fetch_page(loc->page_id);
     if (!frame) {
-        // Fallback direct read
         Page page = fm_.read_page(loc->page_id);
         if (!page.verify_checksum()) {
             throw std::runtime_error("KVStore: Checksum verification failed on page " +
