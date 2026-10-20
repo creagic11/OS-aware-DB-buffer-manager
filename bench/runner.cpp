@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <vector>
 #include <numeric>
+#include <cmath>
 
 using namespace bufferscope;
 
@@ -27,36 +28,37 @@ struct RunResult {
     double stddev_us = 0.0;
 };
 
+// Each run is independent: a fresh database file, a warm-up pass on the SAME
+// store instance (so the measured pass starts from a warm buffer pool), then
+// metrics are reset and only the steady-state pass is recorded.
 RunResult execute_workload_run(const std::string& db_path,
-                             const std::vector<Operation>& ops,
-                             size_t pool_size,
-                             IOMode mode) {
+                               const std::vector<Operation>& warmup_ops,
+                               const std::vector<Operation>& ops,
+                               size_t pool_size,
+                               IOMode mode) {
+    std::filesystem::remove(db_path);
     KVStore store(db_path, pool_size, mode);
+    auto apply = [&store](const Operation& op) {
+        if (op.type == OpType::PUT) store.put(op.key, op.value);
+        else if (op.type == OpType::GET) (void)store.get(op.key);
+        else store.remove(op.key);
+    };
+    for (const auto& op : warmup_ops) apply(op);
+    store.buffer_pool().mutable_metrics().reset();
+
     LatencyTracker latency;
     latency.reserve(ops.size());
-
     auto start_time = std::chrono::steady_clock::now();
-
     for (const auto& op : ops) {
         auto t0 = std::chrono::steady_clock::now();
-        if (op.type == OpType::PUT) {
-            store.put(op.key, op.value);
-        } else if (op.type == OpType::GET) {
-            store.get(op.key);
-        } else if (op.type == OpType::DELETE) {
-            store.remove(op.key);
-        }
+        apply(op);
         auto t1 = std::chrono::steady_clock::now();
-
-        double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
-        latency.record_micros(us);
+        latency.record_micros(std::chrono::duration<double, std::micro>(t1 - t0).count());
     }
-
     store.flush();
     auto end_time = std::chrono::steady_clock::now();
 
     double elapsed = std::chrono::duration<double>(end_time - start_time).count();
-
     RunResult res;
     res.elapsed_sec = elapsed;
     res.iops = static_cast<double>(ops.size()) / elapsed;
@@ -66,7 +68,7 @@ RunResult execute_workload_run(const std::string& db_path,
     res.p99_us = latency.p99();
     res.mean_us = latency.mean();
     res.stddev_us = latency.stddev();
-
+    std::filesystem::remove(db_path);
     return res;
 }
 
@@ -88,12 +90,10 @@ int main(int argc, char* argv[]) {
         else if (arg == "--dir" && i + 1 < argc) db_dir = argv[++i];
         else if (arg == "--io-mode" && i + 1 < argc) {
             mode_str = argv[++i];
-            if (mode_str == "direct") mode = IOMode::DIRECT;
-            else mode = IOMode::BUFFERED;
+            mode = parse_io_mode(mode_str);
         } else if (arg.rfind("--io-mode=", 0) == 0) {
             mode_str = arg.substr(10);
-            if (mode_str == "direct") mode = IOMode::DIRECT;
-            else mode = IOMode::BUFFERED;
+            mode = parse_io_mode(mode_str);
         }
     }
 
@@ -128,14 +128,13 @@ int main(int argc, char* argv[]) {
     std::string bench_file = db_dir + "/bufferscope_bench.db";
     std::filesystem::remove(bench_file);
 
-    // Warm-up Phase
-    std::cout << "[2/3] Executing cache warm-up (5,000 operations)..." << std::flush;
+    // Warm-up ops: a different seed, same distribution; applied inside each run.
     WorkloadConfig warmup_cfg = config;
     warmup_cfg.num_operations = 5000;
-    WorkloadGenerator warmup_gen(warmup_cfg);
-    auto warmup_ops = warmup_gen.generate();
-    execute_workload_run(bench_file, warmup_ops, pool_size, mode);
-    std::cout << " Warm-up completed.\n\n";
+    warmup_cfg.seed = config.seed + 1;
+    auto warmup_ops = WorkloadGenerator(warmup_cfg).generate();
+    std::cout << "[2/3] Warm-up: 5,000 ops (seed " << warmup_cfg.seed
+              << ") executed at the start of every run before recording.\n\n";
 
     // Measured Steady-State Benchmark Runs
     std::cout << "[3/3] Executing " << num_runs << " benchmark runs...\n\n";
@@ -155,7 +154,7 @@ int main(int argc, char* argv[]) {
     std::vector<double> p99_list;
 
     for (size_t r = 1; r <= num_runs; ++r) {
-        RunResult res = execute_workload_run(bench_file, ops, pool_size, mode);
+        RunResult res = execute_workload_run(bench_file, warmup_ops, ops, pool_size, mode);
         results.push_back(res);
         iops_list.push_back(res.iops);
         p50_list.push_back(res.p50_us);

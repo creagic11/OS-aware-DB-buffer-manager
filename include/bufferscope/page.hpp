@@ -36,6 +36,9 @@ constexpr uint32_t PAGE_MAGIC      = 0xBF5C0E01;  // "BufferScope 01"
 constexpr uint32_t HEADER_SIZE     = 32;
 constexpr uint32_t PAYLOAD_OFFSET  = HEADER_SIZE;
 constexpr uint32_t MAX_PAYLOAD     = PAGE_SIZE - HEADER_SIZE;
+// Largest key+value byte total that fits in one empty page
+// (4-byte length prefix + 4-byte slot entry are also needed).
+constexpr uint32_t MAX_KV_BYTES    = MAX_PAYLOAD - 4 - 4;
 
 // PageHeader
 struct PageHeader {
@@ -84,6 +87,9 @@ public:
     // Update the stored checksum to match current content
     void update_checksum();
 
+    // True if the header carries the BufferScope page magic number
+    bool has_valid_magic() const;
+
     // Insert a fixed-length-with-length-prefix record.
     // Record format: [key_len:2][val_len:2][key_data][val_data]
     // Returns true on success, false if page is full.
@@ -130,5 +136,13 @@ private:
 
 // CRC32 utility (ISO 3309 / ITU-T V.42 polynomial)
 uint32_t crc32(const std::byte* data, size_t length);
+
+// In-place helpers on a raw 4096-byte page image (used by the buffer pool so
+// frames can be checksummed/verified without copying into a Page object).
+uint32_t compute_page_checksum(const std::byte* page_bytes);
+void stamp_page_checksum(std::byte* page_bytes);
+bool verify_page_bytes(const std::byte* page_bytes);  // magic + CRC32
+uint32_t page_id_of(const std::byte* page_bytes);
+uint64_t page_lsn_of(const std::byte* page_bytes);
 
 }  // namespace bufferscope

@@ -81,47 +81,36 @@ private:
 };
 
 /**
- * @brief Thread-safe counters for I/O bytes and cache performance (Phase 4).
+ * @brief Buffer-pool counters (hits, misses, evictions, flushes, bytes moved).
+ *
+ * Bytes are counted at the buffer-pool boundary: every page the pool loads
+ * from or writes to the FileManager adds PAGE_SIZE. FileManager::stats()
+ * independently counts the physical syscalls, so the two can be cross-checked.
  */
 class CacheMetrics {
 public:
     CacheMetrics() = default;
 
-    void record_hit() {
-        hits_.fetch_add(1, std::memory_order_relaxed);
+    void record_hit() { hits_.fetch_add(1, std::memory_order_relaxed); }
+    void record_miss() { misses_.fetch_add(1, std::memory_order_relaxed); }
+    void record_eviction(bool dirty) {
+        evictions_.fetch_add(1, std::memory_order_relaxed);
+        if (dirty) dirty_evictions_.fetch_add(1, std::memory_order_relaxed);
     }
+    void record_flush() { page_flushes_.fetch_add(1, std::memory_order_relaxed); }
+    void record_bytes_read(uint64_t bytes) { bytes_read_.fetch_add(bytes, std::memory_order_relaxed); }
+    void record_bytes_written(uint64_t bytes) { bytes_written_.fetch_add(bytes, std::memory_order_relaxed); }
 
-    void record_miss() {
-        misses_.fetch_add(1, std::memory_order_relaxed);
-    }
+    uint64_t get_hits() const { return hits_.load(std::memory_order_relaxed); }
+    uint64_t get_misses() const { return misses_.load(std::memory_order_relaxed); }
+    uint64_t get_evictions() const { return evictions_.load(std::memory_order_relaxed); }
+    uint64_t get_dirty_evictions() const { return dirty_evictions_.load(std::memory_order_relaxed); }
+    /// Total dirty pages written back (eviction write-backs + explicit flushes).
+    uint64_t get_page_flushes() const { return page_flushes_.load(std::memory_order_relaxed); }
+    uint64_t get_bytes_read() const { return bytes_read_.load(std::memory_order_relaxed); }
+    uint64_t get_bytes_written() const { return bytes_written_.load(std::memory_order_relaxed); }
 
-    void record_bytes_read(uint64_t bytes) {
-        bytes_read_.fetch_add(bytes, std::memory_order_relaxed);
-    }
-
-    void record_bytes_written(uint64_t bytes) {
-        bytes_written_.fetch_add(bytes, std::memory_order_relaxed);
-    }
-
-    uint64_t get_hits() const {
-        return hits_.load(std::memory_order_relaxed);
-    }
-
-    uint64_t get_misses() const {
-        return misses_.load(std::memory_order_relaxed);
-    }
-
-    uint64_t get_bytes_read() const {
-        return bytes_read_.load(std::memory_order_relaxed);
-    }
-
-    uint64_t get_bytes_written() const {
-        return bytes_written_.load(std::memory_order_relaxed);
-    }
-
-    uint64_t get_total_accesses() const {
-        return get_hits() + get_misses();
-    }
+    uint64_t get_total_accesses() const { return get_hits() + get_misses(); }
 
     double hit_ratio() const {
         uint64_t total = get_total_accesses();
@@ -131,6 +120,9 @@ public:
     void reset() {
         hits_.store(0, std::memory_order_relaxed);
         misses_.store(0, std::memory_order_relaxed);
+        evictions_.store(0, std::memory_order_relaxed);
+        dirty_evictions_.store(0, std::memory_order_relaxed);
+        page_flushes_.store(0, std::memory_order_relaxed);
         bytes_read_.store(0, std::memory_order_relaxed);
         bytes_written_.store(0, std::memory_order_relaxed);
     }
@@ -138,6 +130,9 @@ public:
 private:
     std::atomic<uint64_t> hits_{0};
     std::atomic<uint64_t> misses_{0};
+    std::atomic<uint64_t> evictions_{0};
+    std::atomic<uint64_t> dirty_evictions_{0};
+    std::atomic<uint64_t> page_flushes_{0};
     std::atomic<uint64_t> bytes_read_{0};
     std::atomic<uint64_t> bytes_written_{0};
 };

@@ -1,12 +1,27 @@
 #include "bufferscope/kv_store.hpp"
+
+#include <cstring>
 #include <stdexcept>
-#include <iostream>
 
 namespace bufferscope {
 
-KVStore::KVStore(const std::string& filepath, size_t pool_size, IOMode mode)
-    : fm_(filepath, mode),
-      bpm_(std::make_unique<BufferPoolManager>(pool_size, fm_)) {
+namespace {
+
+// Load a frame's bytes into a Page, mutate, and copy back. The checksum is
+// stamped lazily by the buffer pool at write-back time, so no CRC is computed
+// on the hot path.
+template <typename Fn>
+auto with_page(Frame* frame, Fn&& fn) {
+    Page page(frame->data);
+    auto result = fn(page);
+    std::memcpy(frame->data, page.data(), PAGE_SIZE);
+    return result;
+}
+
+}  // namespace
+
+KVStore::KVStore(const std::string& filepath, size_t pool_size, IOMode mode, ReplacerType replacer)
+    : fm_(filepath, mode), bpm_(std::make_unique<BufferPoolManager>(pool_size, fm_, replacer)) {
     rebuild_index();
 }
 
@@ -17,192 +32,109 @@ KVStore::~KVStore() {
     }
 }
 
-void KVStore::ensure_active_page() {
-    uint32_t count = fm_.page_count();
-    if (count == 0) {
-        Page p0(0u);
-        p0.update_checksum();
-        fm_.write_page(p0);
-        fm_.flush();
-        active_page_id_ = 0;
-    } else {
-        active_page_id_ = count - 1;
-    }
+Frame* KVStore::pin_or_throw(uint32_t page_id) {
+    Frame* f = bpm_->fetch_page(page_id);
+    if (!f) throw BufferPoolExhaustedError("KVStore: no evictable frame (all frames pinned)");
+    return f;
+}
+
+Frame* KVStore::new_page_or_throw(uint32_t& page_id) {
+    Frame* f = bpm_->new_page(page_id);
+    if (!f) throw BufferPoolExhaustedError("KVStore: no evictable frame for a new page");
+    return f;
 }
 
 void KVStore::rebuild_index() {
     index_.clear();
-    uint32_t count = fm_.page_count();
+    const uint32_t count = fm_.page_count();
     if (count == 0) {
-        ensure_active_page();
+        uint32_t pid = 0;
+        new_page_or_throw(pid);
+        bpm_->unpin_page(pid, false);
+        bpm_->flush_all_pages();
+        active_page_id_ = pid;
         return;
     }
 
     for (uint32_t pid = 0; pid < count; ++pid) {
-        Frame* frame = bpm_->fetch_page(pid);
-        if (!frame) {
-            Page page = fm_.read_page(pid);
-            if (!page.verify_checksum()) {
-                throw std::runtime_error("KVStore: Checksum verification failed on page " +
-                                         std::to_string(pid));
-            }
-            uint16_t num_records = page.record_count();
-            for (uint16_t slot = 0; slot < num_records; ++slot) {
-                auto rec = page.read_record(slot);
-                if (rec.has_value()) {
-                    index_.put(rec->first, {pid, slot});
-                }
-            }
-            continue;
-        }
-
+        // fetch_page verifies magic + CRC32 and throws ChecksumMismatchError.
+        Frame* frame = pin_or_throw(pid);
         Page page(frame->data);
-        if (!page.verify_checksum()) {
-            bpm_->unpin_page(pid, false);
-            throw std::runtime_error("KVStore: Checksum verification failed on page " +
-                                     std::to_string(pid));
-        }
-
-        uint16_t num_records = page.record_count();
-        for (uint16_t slot = 0; slot < num_records; ++slot) {
-            auto rec = page.read_record(slot);
-            if (rec.has_value()) {
-                index_.put(rec->first, {pid, slot});
-            }
-        }
         bpm_->unpin_page(pid, false);
+        for (uint16_t slot = 0; slot < page.record_count(); ++slot) {
+            auto rec = page.read_record(slot);
+            if (rec.has_value()) index_.put(rec->first, {pid, slot});
+        }
     }
-
     active_page_id_ = count - 1;
 }
 
 bool KVStore::put(const std::string& key, const std::string& value) {
-    uint16_t key_len = static_cast<uint16_t>(key.size());
-    uint16_t val_len = static_cast<uint16_t>(value.size());
-    uint16_t record_size = 4 + key_len + val_len;
-
-    if (record_size + sizeof(SlotEntry) > MAX_PAYLOAD) {
-        throw std::invalid_argument("KVStore: Record size exceeds page capacity");
+    if (key.size() + value.size() > MAX_KV_BYTES) {
+        throw std::invalid_argument("KVStore: record of " + std::to_string(key.size() + value.size()) +
+                                    " bytes exceeds single-page capacity (" +
+                                    std::to_string(MAX_KV_BYTES) + ")");
     }
 
-    auto existing_loc = index_.get(key);
-    if (existing_loc.has_value()) {
-        Frame* old_frame = bpm_->fetch_page(existing_loc->page_id);
-        if (old_frame) {
-            Page old_page(old_frame->data);
-            old_page.delete_record(existing_loc->slot_idx);
-            old_page.update_checksum();
-            std::memcpy(old_frame->data, old_page.data(), PAGE_SIZE);
-            bpm_->unpin_page(existing_loc->page_id, true);
-        } else {
-            Page old_page = fm_.read_page(existing_loc->page_id);
-            old_page.delete_record(existing_loc->slot_idx);
-            old_page.update_checksum();
-            fm_.write_page(old_page);
-        }
+    // 1. Tombstone the previous version, if any.
+    if (auto old = index_.get(key)) {
+        Frame* f = pin_or_throw(old->page_id);
+        with_page(f, [&](Page& p) { return p.delete_record(old->slot_idx); });
+        bpm_->unpin_page(old->page_id, true);
+        index_.remove(key);
     }
 
-    Frame* active_frame = bpm_->fetch_page(active_page_id_);
-    if (!active_frame) {
-        uint32_t new_pid = 0;
-        active_frame = bpm_->new_page(new_pid);
-        if (!active_frame) throw std::runtime_error("KVStore: Buffer pool exhausted");
-        active_page_id_ = new_pid;
-    }
-
-    Page active_page(active_frame->data);
-    if (!active_page.insert_record(key, value)) {
+    // 2. Append to the active page, rolling over to a fresh page when full.
+    Frame* f = pin_or_throw(active_page_id_);
+    uint16_t slot = 0;
+    bool ok = with_page(f, [&](Page& p) {
+        if (!p.insert_record(key, value)) return false;
+        slot = static_cast<uint16_t>(p.record_count() - 1);
+        return true;
+    });
+    if (!ok) {
         bpm_->unpin_page(active_page_id_, false);
-
         uint32_t new_pid = 0;
-        Frame* new_frame = bpm_->new_page(new_pid);
-        if (!new_frame) throw std::runtime_error("KVStore: Buffer pool exhausted");
-
+        f = new_page_or_throw(new_pid);
         active_page_id_ = new_pid;
-        Page new_page(new_frame->data);
-        if (!new_page.insert_record(key, value)) {
+        ok = with_page(f, [&](Page& p) {
+            if (!p.insert_record(key, value)) return false;
+            slot = static_cast<uint16_t>(p.record_count() - 1);
+            return true;
+        });
+        if (!ok) {
             bpm_->unpin_page(active_page_id_, false);
-            throw std::runtime_error("KVStore: Failed to insert record into empty page");
+            throw std::logic_error("KVStore: record did not fit in an empty page");
         }
-        new_page.update_checksum();
-        std::memcpy(new_frame->data, new_page.data(), PAGE_SIZE);
-        uint16_t slot_idx = new_page.record_count() - 1;
-        bpm_->unpin_page(active_page_id_, true);
-        index_.put(key, {active_page_id_, slot_idx});
-    } else {
-        active_page.update_checksum();
-        std::memcpy(active_frame->data, active_page.data(), PAGE_SIZE);
-        uint16_t slot_idx = active_page.record_count() - 1;
-        bpm_->unpin_page(active_page_id_, true);
-        index_.put(key, {active_page_id_, slot_idx});
     }
-
+    bpm_->unpin_page(active_page_id_, true);
+    index_.put(key, {active_page_id_, slot});
     return true;
 }
 
 std::optional<std::string> KVStore::get(const std::string& key) {
     auto loc = index_.get(key);
-    if (!loc.has_value()) {
-        return std::nullopt;
-    }
+    if (!loc) return std::nullopt;
 
-    Frame* frame = bpm_->fetch_page(loc->page_id);
-    if (!frame) {
-        Page page = fm_.read_page(loc->page_id);
-        if (!page.verify_checksum()) {
-            throw std::runtime_error("KVStore: Checksum verification failed on page " +
-                                     std::to_string(loc->page_id));
-        }
-        auto rec = page.read_record(loc->slot_idx);
-        if (!rec.has_value() || rec->first != key) return std::nullopt;
-        return rec->second;
-    }
-
-    Page page(frame->data);
-    if (!page.verify_checksum()) {
-        bpm_->unpin_page(loc->page_id, false);
-        throw std::runtime_error("KVStore: Checksum verification failed on page " +
-                                 std::to_string(loc->page_id));
-    }
-
+    Frame* f = pin_or_throw(loc->page_id);
+    // Read the record straight out of the frame (checksum was verified when the
+    // page was loaded from disk; in-memory frames are trusted).
+    Page page(f->data);
     auto rec = page.read_record(loc->slot_idx);
     bpm_->unpin_page(loc->page_id, false);
 
-    if (!rec.has_value() || rec->first != key) {
-        return std::nullopt;
-    }
-
-    return rec->second;
+    if (!rec || rec->first != key) return std::nullopt;
+    return std::move(rec->second);
 }
 
 bool KVStore::remove(const std::string& key) {
     auto loc = index_.get(key);
-    if (!loc.has_value()) {
-        return false;
-    }
+    if (!loc) return false;
 
-    Frame* frame = bpm_->fetch_page(loc->page_id);
-    bool deleted = false;
-    if (frame) {
-        Page page(frame->data);
-        deleted = page.delete_record(loc->slot_idx);
-        if (deleted) {
-            page.update_checksum();
-            std::memcpy(frame->data, page.data(), PAGE_SIZE);
-        }
-        bpm_->unpin_page(loc->page_id, deleted);
-    } else {
-        Page page = fm_.read_page(loc->page_id);
-        deleted = page.delete_record(loc->slot_idx);
-        if (deleted) {
-            page.update_checksum();
-            fm_.write_page(page);
-        }
-    }
-
-    if (deleted) {
-        index_.remove(key);
-    }
+    Frame* f = pin_or_throw(loc->page_id);
+    bool deleted = with_page(f, [&](Page& p) { return p.delete_record(loc->slot_idx); });
+    bpm_->unpin_page(loc->page_id, deleted);
+    if (deleted) index_.remove(key);
     return deleted;
 }
 

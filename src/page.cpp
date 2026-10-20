@@ -44,6 +44,46 @@ uint32_t crc32(const std::byte* data, size_t length) {
     return crc ^ 0xFFFFFFFFu;
 }
 
+// ── Raw page-image helpers ──────────────────────────────────────────
+
+uint32_t compute_page_checksum(const std::byte* page_bytes) {
+    // CRC32 over the page with the 4-byte checksum field treated as zero.
+    constexpr size_t off = offsetof(PageHeader, checksum);
+    static constexpr std::byte zeros[sizeof(uint32_t)] = {};
+    uint32_t crc = 0xFFFFFFFFu;
+    auto feed = [&crc](const std::byte* d, size_t n) {
+        for (size_t i = 0; i < n; ++i)
+            crc = (crc >> 8) ^ crc_table[(crc ^ static_cast<uint8_t>(d[i])) & 0xFF];
+    };
+    feed(page_bytes, off);
+    feed(zeros, sizeof(uint32_t));
+    feed(page_bytes + off + sizeof(uint32_t), PAGE_SIZE - off - sizeof(uint32_t));
+    return crc ^ 0xFFFFFFFFu;
+}
+
+void stamp_page_checksum(std::byte* page_bytes) {
+    uint32_t c = compute_page_checksum(page_bytes);
+    std::memcpy(page_bytes + offsetof(PageHeader, checksum), &c, sizeof(c));
+}
+
+bool verify_page_bytes(const std::byte* page_bytes) {
+    PageHeader h;
+    std::memcpy(&h, page_bytes, sizeof(h));
+    return h.magic == PAGE_MAGIC && h.checksum == compute_page_checksum(page_bytes);
+}
+
+uint32_t page_id_of(const std::byte* page_bytes) {
+    uint32_t id;
+    std::memcpy(&id, page_bytes + offsetof(PageHeader, page_id), sizeof(id));
+    return id;
+}
+
+uint64_t page_lsn_of(const std::byte* page_bytes) {
+    uint64_t lsn;
+    std::memcpy(&lsn, page_bytes + offsetof(PageHeader, lsn), sizeof(lsn));
+    return lsn;
+}
+
 // ── Page construction ──────────────────────────────────────────────
 
 Page::Page(uint32_t page_id) : header_{} {
@@ -60,6 +100,10 @@ Page::Page(uint32_t page_id) : header_{} {
 
     sync_header();
     update_checksum();
+}
+
+bool Page::has_valid_magic() const {
+    return header_.magic == PAGE_MAGIC;
 }
 
 Page::Page(const std::byte* raw_data) {
@@ -146,9 +190,14 @@ uint16_t Page::free_space() const {
 
 bool Page::insert_record(const std::string& key, const std::string& value) {
     // Record format: [key_len:2][val_len:2][key_data][val_data]
+    // Guard against uint16_t truncation: a record (4-byte prefix + key + value)
+    // plus its slot entry must fit in the payload area of a single page.
+    if (key.size() + value.size() + 4 + sizeof(SlotEntry) > MAX_PAYLOAD) {
+        return false;
+    }
     uint16_t key_len = static_cast<uint16_t>(key.size());
     uint16_t val_len = static_cast<uint16_t>(value.size());
-    uint16_t record_size = 4 + key_len + val_len;  // 2+2 for length prefixes
+    uint16_t record_size = static_cast<uint16_t>(4 + key_len + val_len);  // 2+2 for length prefixes
 
     // Space check:
     // Need: 4 bytes for new SlotEntry at the slot directory

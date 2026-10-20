@@ -1,20 +1,22 @@
 #pragma once
 
+#include "bufferscope/errors.hpp"
 #include "bufferscope/file_manager.hpp"
-#include "bufferscope/page.hpp"
 #include "bufferscope/metrics.hpp"
+#include "bufferscope/page.hpp"
 #include "bufferscope/replacer.hpp"
 
-#include <cstdint>
 #include <cstddef>
-#include <vector>
-#include <unordered_map>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <unordered_map>
+#include <vector>
 
 namespace bufferscope {
 
 /**
- * @brief Canonical Frame structure as specified in Section 1.4 of specification.
+ * @brief Canonical Frame structure as specified in Section 1.4 of the specification.
  */
 struct Frame {
     uint32_t page_id = 0;
@@ -31,11 +33,22 @@ enum class ReplacerType {
     LRU
 };
 
+const char* replacer_name(ReplacerType t);
+ReplacerType parse_replacer(const std::string& s);  // "clock" | "lru"
+
 /**
- * @brief Database-managed buffer pool (Phase 2 & 3).
+ * @brief Database-managed buffer pool.
  *
- * Owns a fixed pool of memory frames and a page table (page_id -> frame_id).
- * Features full CLOCK-based eviction and dirty page writeback flushing.
+ * Owns a fixed pool of frames and a page table (page_id -> frame_id).
+ *
+ * Invariants:
+ *  - a frame with pin_count > 0 is never evicted;
+ *  - a dirty victim is written back (and its checksum stamped) before its
+ *    memory is reused for another page;
+ *  - every page loaded from disk is checksum-verified; corruption raises
+ *    ChecksumMismatchError, never silently returns bad bytes;
+ *  - on any I/O failure while loading, the frame is returned to the free list
+ *    (no frame leaks, page table stays consistent).
  */
 class BufferPoolManager {
 public:
@@ -43,38 +56,42 @@ public:
                       ReplacerType replacer_type = ReplacerType::CLOCK);
     ~BufferPoolManager();
 
-    // Non-copyable
     BufferPoolManager(const BufferPoolManager&) = delete;
     BufferPoolManager& operator=(const BufferPoolManager&) = delete;
 
-    // Fetch a page into a memory frame. Increments pin_count and returns the frame.
-    // Evicts a victim if full; returns nullptr if all frames are pinned.
+    /// Pin a page in memory (loading it on a miss). Returns nullptr if every frame is pinned.
+    /// Pages beyond the end of the file are materialised as fresh empty pages.
     Frame* fetch_page(uint32_t page_id);
 
-    // Unpin a page frame. If is_dirty is true, marks frame as dirty.
+    /// Unpin a page; is_dirty marks the frame modified. Returns false on bookkeeping errors.
     bool unpin_page(uint32_t page_id, bool is_dirty);
 
-    // Flush a specific page to disk if dirty
+    /// Write a resident page back if dirty (no fdatasync). Returns false if not resident.
     bool flush_page(uint32_t page_id);
 
-    // Flush all dirty pages to disk and sync file
+    /// Write back every dirty page and fdatasync the data file.
     void flush_all_pages();
 
-    // Allocate a new page in the buffer pool and on disk
+    /// Allocate a brand-new page id at the end of the file, pinned and dirty.
     Frame* new_page(uint32_t& page_id);
 
-    // Check if a page is currently resident in the buffer pool
+    /// Drop an unpinned page from the pool (writing it back first if dirty).
+    bool delete_page(uint32_t page_id);
+
     bool is_resident(uint32_t page_id) const;
 
-    // Accessors
     size_t pool_size() const { return pool_size_; }
+    uint32_t num_pages() const { return num_pages_; }
     const CacheMetrics& metrics() const { return metrics_; }
     CacheMetrics& mutable_metrics() { return metrics_; }
+    FileManager& file_manager() { return fm_; }
 
-    // Direct access to a frame by ID (for inspection/testing)
     Frame* get_frame(size_t frame_id);
     const Frame* get_frame(size_t frame_id) const;
     Replacer& replacer() { return *replacer_; }
+
+    /// Number of frames currently pinned (diagnostics / tests).
+    size_t pinned_frames() const;
 
 private:
     size_t pool_size_;
@@ -85,9 +102,11 @@ private:
     std::unique_ptr<Replacer> replacer_;
     CacheMetrics metrics_;
     uint64_t access_counter_ = 0;
+    uint32_t num_pages_ = 0;  // max(page_count on disk, highest page id handed out + 1)
 
-    // Helper to find an available frame (from free list or via eviction)
     std::optional<size_t> find_available_frame();
+    void write_back(Frame& frame);
+    void release_frame(size_t frame_id);
 };
 
 }  // namespace bufferscope

@@ -41,3 +41,22 @@
 - **WSL2 environment**: Running on Windows Subsystem for Linux 2. The virtual disk is backed by a VHDX file on the host's NVMe SSD.
 - **O_DIRECT support**: Verified on ext4. Alignment to 4096 bytes satisfies both logical (512 B) and physical (4096 B) sector sizes.
 - **iostat/pidstat**: Confirmed working (`sysstat` package) for storage-level telemetry.
+
+---
+
+## Secondary Verification Environment (review of Phases 0–5, continued development)
+
+The Phase 0–5 review and Phases 6–9 were built and verified in a second, clean
+Linux environment (a fresh checkout built from scratch). Numbers measured here are
+labelled with this environment; numbers measured on the WSL2 machine above stay
+labelled with that machine. They are **not** interchangeable.
+
+| Property           | Value |
+|--------------------|-------|
+| **CPU**            | Intel Xeon @ 2.10 GHz, 2 vCPUs (cloud VM) |
+| **RAM**            | 7 GiB |
+| **OS / Kernel**    | Ubuntu 24.04.5 LTS, Linux 6.18 (VM) |
+| **Filesystem**     | ext4 on `/dev/vda` (`rw,relatime,discard`) — block-device backed, not tmpfs |
+| **Logical / physical sector** | 512 B / 4096 B (`/sys/block/vda/queue/*_block_size`) |
+| **O_DIRECT**       | Supported; 4096-byte alignment (= max(sector, PAGE_SIZE)) verified by `DirectIOTest` and `io_mode_correctness_test` |
+| **Toolchain**      | GCC 13.3.0, CMake 3.28.3, Ninja, GoogleTest 1.14.0, Google Benchmark 1.8.3, Python 3.12 + pandas 3.0.5 + matplotlib 3.11.2 |

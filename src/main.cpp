@@ -1,57 +1,78 @@
 /**
  * @file main.cpp
- * @brief BufferScope entry point (stub for Phase 0).
+ * @brief BufferScope KV command-line entry point.
  *
- * A full CLI will be built in Phase 9. For now, this simply verifies
- * the page library works by writing and reading back a test page.
+ *   bufferscope [--db PATH] [--io-mode=buffered|direct] [--pool N] put KEY VALUE
+ *   bufferscope [...] get KEY
+ *   bufferscope [...] del KEY
+ *   bufferscope [...] stats
  */
 
-#include "bufferscope/page.hpp"
-#include "bufferscope/file_manager.hpp"
-#include <iostream>
+#include "bufferscope/kv_store.hpp"
+
 #include <filesystem>
+#include <iostream>
+#include <string>
+#include <vector>
 
-int main() {
-    std::cout << "BufferScope v0.1.0 — OS-Aware Database Buffer Manager\n";
-    std::cout << "Phase 0: Disk Page Library\n\n";
+using namespace bufferscope;
 
-    const std::string test_file = "data/test.db";
-    std::filesystem::create_directories("data");
+static int usage() {
+    std::cerr << "usage: bufferscope [--db PATH] [--io-mode=buffered|direct] [--pool N]\n"
+                 "                   (put KEY VALUE | get KEY | del KEY | stats)\n";
+    return 2;
+}
+
+int main(int argc, char** argv) {
+    std::string db = "data/bufferscope.db";
+    IOMode mode = IOMode::BUFFERED;
+    size_t pool = 128;
+    std::vector<std::string> cmd;
 
     try {
-        // Create a page, insert a record, write it
-        bufferscope::Page page(0u);
-        page.insert_record("hello", "world");
-        page.update_checksum();
-
-        std::cout << "Page 0 created, record_count=" << page.record_count()
-                  << ", free_space=" << page.free_space() << " bytes\n";
-
-        // Write to file
-        bufferscope::FileManager fm(test_file);
-        fm.write_page(page);
-        fm.flush();
-        std::cout << "Page 0 written to " << test_file << "\n";
-
-        // Read back
-        auto read_back = fm.read_page(0u);
-        if (read_back.verify_checksum()) {
-            auto rec = read_back.read_record(0);
-            if (rec) {
-                std::cout << "Read back: key='" << rec->first
-                          << "', value='" << rec->second << "'\n";
-                std::cout << "Checksum: VALID\n";
-            }
-        } else {
-            std::cerr << "ERROR: Checksum verification failed!\n";
-            return 1;
+        for (int i = 1; i < argc; ++i) {
+            std::string a = argv[i];
+            auto value = [&](const std::string& flag) -> std::string {
+                if (a.rfind(flag + "=", 0) == 0) return a.substr(flag.size() + 1);
+                if (i + 1 >= argc) throw std::invalid_argument(flag + " needs a value");
+                return argv[++i];
+            };
+            if (a == "--db" || a.rfind("--db=", 0) == 0) db = value("--db");
+            else if (a == "--io-mode" || a.rfind("--io-mode=", 0) == 0) mode = parse_io_mode(value("--io-mode"));
+            else if (a == "--pool" || a.rfind("--pool=", 0) == 0) pool = std::stoul(value("--pool"));
+            else if (a == "-h" || a == "--help") return usage();
+            else cmd.push_back(a);
         }
+        if (cmd.empty()) return usage();
 
-        std::cout << "\nPhase 0 smoke test: PASSED\n";
+        auto parent = std::filesystem::path(db).parent_path();
+        if (!parent.empty()) std::filesystem::create_directories(parent);
+        KVStore store(db, pool, mode);
+
+        if (cmd[0] == "put" && cmd.size() == 3) {
+            store.put(cmd[1], cmd[2]);
+            store.flush();
+            std::cout << "OK\n";
+        } else if (cmd[0] == "get" && cmd.size() == 2) {
+            auto v = store.get(cmd[1]);
+            if (!v) { std::cout << "(not found)\n"; return 1; }
+            std::cout << *v << "\n";
+        } else if ((cmd[0] == "del" || cmd[0] == "delete") && cmd.size() == 2) {
+            bool ok = store.remove(cmd[1]);
+            store.flush();
+            std::cout << (ok ? "DELETED\n" : "(not found)\n");
+            return ok ? 0 : 1;
+        } else if (cmd[0] == "stats" && cmd.size() == 1) {
+            const auto& m = store.buffer_pool().metrics();
+            std::cout << "db=" << db << " io_mode=" << io_mode_name(mode) << " pool_frames=" << pool
+                      << " pages=" << store.file_manager().page_count() << " live_keys=" << store.size()
+                      << " startup_misses=" << m.get_misses() << "\n";
+        } else {
+            return usage();
+        }
     } catch (const std::exception& e) {
-        std::cerr << "ERROR: " << e.what() << "\n";
+        std::cerr << "error: " << e.what() << "\n";
         return 1;
     }
-
     return 0;
 }
