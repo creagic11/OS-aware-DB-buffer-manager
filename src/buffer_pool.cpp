@@ -5,13 +5,19 @@
 
 namespace bufferscope {
 
-BufferPoolManager::BufferPoolManager(size_t pool_size, FileManager& file_manager)
+BufferPoolManager::BufferPoolManager(size_t pool_size, FileManager& file_manager,
+                                     ReplacerType replacer_type)
     : pool_size_(pool_size),
       fm_(file_manager),
       frames_(std::make_unique<Frame[]>(pool_size)) {
 
+    if (replacer_type == ReplacerType::CLOCK) {
+        replacer_ = std::make_unique<ClockReplacer>(pool_size_);
+    } else {
+        replacer_ = std::make_unique<LRUReplacer>(pool_size_);
+    }
+
     free_list_.reserve(pool_size);
-    // Populate free list with all frame IDs
     for (size_t i = 0; i < pool_size_; ++i) {
         frames_[i].valid = false;
         frames_[i].pin_count = 0;
@@ -26,7 +32,6 @@ BufferPoolManager::~BufferPoolManager() {
     try {
         flush_all_pages();
     } catch (...) {
-        // Suppress exceptions in destructor
     }
 }
 
@@ -42,6 +47,39 @@ const Frame* BufferPoolManager::get_frame(size_t frame_id) const {
 
 bool BufferPoolManager::is_resident(uint32_t page_id) const {
     return page_table_.contains(page_id);
+}
+
+std::optional<size_t> BufferPoolManager::find_available_frame() {
+    // 1. Try free list
+    if (!free_list_.empty()) {
+        size_t frame_id = free_list_.back();
+        free_list_.pop_back();
+        return frame_id;
+    }
+
+    // 2. Try replacement policy
+    auto victim_opt = replacer_->victim(frames_.get(), pool_size_);
+    if (!victim_opt.has_value()) {
+        // All frames are pinned! Cannot evict anything.
+        return std::nullopt;
+    }
+
+    size_t frame_id = *victim_opt;
+    Frame& victim = frames_[frame_id];
+
+    // Eviction Invariant: Dirty victims must be flushed to disk before reuse!
+    if (victim.valid && victim.dirty) {
+        Page page(victim.data);
+        page.update_checksum();
+        std::memcpy(victim.data, page.data(), PAGE_SIZE);
+        fm_.write_page(page);
+        victim.dirty = false;
+    }
+
+    // Remove old page_id from page table
+    page_table_.erase(victim.page_id);
+
+    return frame_id;
 }
 
 Frame* BufferPoolManager::fetch_page(uint32_t page_id) {
@@ -62,24 +100,21 @@ Frame* BufferPoolManager::fetch_page(uint32_t page_id) {
     // 2. Cache Miss
     metrics_.record_miss();
 
-    // In Phase 2: use trivial first-free-frame allocation
-    if (free_list_.empty()) {
-        // Pool is exhausted, and Phase 3 replacer does not exist yet.
-        return nullptr;
+    auto frame_id_opt = find_available_frame();
+    if (!frame_id_opt.has_value()) {
+        return nullptr;  // All frames pinned
     }
 
-    size_t frame_id = free_list_.back();
-    free_list_.pop_back();
-
+    size_t frame_id = *frame_id_opt;
     Frame& frame = frames_[frame_id];
 
-    // Read page from disk
+    // Read page from disk or initialize empty
     if (fm_.page_exists(page_id)) {
         Page page = fm_.read_page(page_id);
         std::memcpy(frame.data, page.data(), PAGE_SIZE);
     } else {
-        // Brand new page initialized to zeroed page with header
         Page page(page_id);
+        page.update_checksum();
         std::memcpy(frame.data, page.data(), PAGE_SIZE);
     }
 
@@ -104,7 +139,7 @@ bool BufferPoolManager::unpin_page(uint32_t page_id, bool is_dirty) {
     Frame& frame = frames_[frame_id];
 
     if (frame.pin_count == 0) {
-        return false;  // Already unpinned
+        return false;
     }
 
     frame.pin_count--;
@@ -125,12 +160,9 @@ bool BufferPoolManager::flush_page(uint32_t page_id) {
     Frame& frame = frames_[frame_id];
 
     if (frame.valid && frame.dirty) {
-        // Reconstruct Page from frame data and update checksum
         Page page(frame.data);
         page.update_checksum();
-        // Copy back updated checksum into frame data
         std::memcpy(frame.data, page.data(), PAGE_SIZE);
-        // Write to disk
         fm_.write_page(page);
         frame.dirty = false;
     }
@@ -155,17 +187,17 @@ void BufferPoolManager::flush_all_pages() {
 Frame* BufferPoolManager::new_page(uint32_t& page_id) {
     access_counter_++;
 
-    if (free_list_.empty()) {
-        return nullptr;  // Pool exhausted
+    auto frame_id_opt = find_available_frame();
+    if (!frame_id_opt.has_value()) {
+        return nullptr;  // All frames pinned
     }
 
-    size_t frame_id = free_list_.back();
-    free_list_.pop_back();
-
+    size_t frame_id = *frame_id_opt;
     page_id = fm_.page_count();
 
     Frame& frame = frames_[frame_id];
     Page new_p(page_id);
+    new_p.update_checksum();
     std::memcpy(frame.data, new_p.data(), PAGE_SIZE);
 
     frame.page_id = page_id;

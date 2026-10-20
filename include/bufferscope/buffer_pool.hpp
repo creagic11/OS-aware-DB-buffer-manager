@@ -3,13 +3,13 @@
 #include "bufferscope/file_manager.hpp"
 #include "bufferscope/page.hpp"
 #include "bufferscope/metrics.hpp"
+#include "bufferscope/replacer.hpp"
 
 #include <cstdint>
 #include <cstddef>
 #include <vector>
 #include <unordered_map>
 #include <memory>
-#include <mutex>
 
 namespace bufferscope {
 
@@ -26,17 +26,21 @@ struct Frame {
     alignas(4096) std::byte data[PAGE_SIZE];
 };
 
+enum class ReplacerType {
+    CLOCK,
+    LRU
+};
+
 /**
- * @brief Database-managed buffer pool (Phase 2).
+ * @brief Database-managed buffer pool (Phase 2 & 3).
  *
  * Owns a fixed pool of memory frames and a page table (page_id -> frame_id).
- * Handles FetchPage, UnpinPage, FlushPage, and metrics.
- * Note: Eviction replacer is added in Phase 3. In Phase 2, a first-free-frame
- * strategy is used; if pool is exhausted, FetchPage returns nullptr.
+ * Features full CLOCK-based eviction and dirty page writeback flushing.
  */
 class BufferPoolManager {
 public:
-    BufferPoolManager(size_t pool_size, FileManager& file_manager);
+    BufferPoolManager(size_t pool_size, FileManager& file_manager,
+                      ReplacerType replacer_type = ReplacerType::CLOCK);
     ~BufferPoolManager();
 
     // Non-copyable
@@ -44,7 +48,7 @@ public:
     BufferPoolManager& operator=(const BufferPoolManager&) = delete;
 
     // Fetch a page into a memory frame. Increments pin_count and returns the frame.
-    // Returns nullptr if page not resident and no free frame is available (Phase 2 constraint).
+    // Evicts a victim if full; returns nullptr if all frames are pinned.
     Frame* fetch_page(uint32_t page_id);
 
     // Unpin a page frame. If is_dirty is true, marks frame as dirty.
@@ -70,6 +74,7 @@ public:
     // Direct access to a frame by ID (for inspection/testing)
     Frame* get_frame(size_t frame_id);
     const Frame* get_frame(size_t frame_id) const;
+    Replacer& replacer() { return *replacer_; }
 
 private:
     size_t pool_size_;
@@ -77,8 +82,12 @@ private:
     std::unique_ptr<Frame[]> frames_;
     std::unordered_map<uint32_t, size_t> page_table_;
     std::vector<size_t> free_list_;
+    std::unique_ptr<Replacer> replacer_;
     CacheMetrics metrics_;
     uint64_t access_counter_ = 0;
+
+    // Helper to find an available frame (from free list or via eviction)
+    std::optional<size_t> find_available_frame();
 };
 
 }  // namespace bufferscope

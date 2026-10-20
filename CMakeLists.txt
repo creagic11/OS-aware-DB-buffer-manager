@@ -24,6 +24,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_library(bufferscope_core
     src/page.cpp
     src/file_manager.cpp
+    src/clock_replacer.cpp
     src/buffer_pool.cpp
     src/kv_store.cpp
 )
@@ -54,3 +55,11 @@ add_test(NAME KVCorrectnessTest COMMAND kv_correctness_test)
 add_executable(buffer_pool_test tests/buffer_pool_test.cpp)
 target_link_libraries(buffer_pool_test bufferscope_core GTest::gtest_main)
 add_test(NAME BufferPoolTest COMMAND buffer_pool_test)
+
+add_executable(clock_replacer_test tests/clock_replacer_test.cpp)
+target_link_libraries(clock_replacer_test bufferscope_core GTest::gtest_main)
+add_test(NAME ClockReplacerTest COMMAND clock_replacer_test)
+
+add_executable(buffer_pool_eviction_test tests/buffer_pool_eviction_test.cpp)
+target_link_libraries(buffer_pool_eviction_test bufferscope_core GTest::gtest_main)
+add_test(NAME BufferPoolEvictionTest COMMAND buffer_pool_eviction_test)
