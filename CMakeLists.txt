@@ -24,6 +24,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_library(bufferscope_core
     src/page.cpp
     src/file_manager.cpp
+    src/buffer_pool.cpp
     src/kv_store.cpp
 )
 target_include_directories(bufferscope_core PUBLIC
@@ -49,3 +50,7 @@ add_test(NAME FileManagerTest COMMAND file_manager_test)
 add_executable(kv_correctness_test tests/kv_correctness_test.cpp)
 target_link_libraries(kv_correctness_test bufferscope_core GTest::gtest_main)
 add_test(NAME KVCorrectnessTest COMMAND kv_correctness_test)
+
+add_executable(buffer_pool_test tests/buffer_pool_test.cpp)
+target_link_libraries(buffer_pool_test bufferscope_core GTest::gtest_main)
+add_test(NAME BufferPoolTest COMMAND buffer_pool_test)
