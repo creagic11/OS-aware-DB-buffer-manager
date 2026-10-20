@@ -39,7 +39,7 @@ HEADER = 32
 KEY_LEN = 11  # "k%010u"
 TINY_POOL = 16
 FRAME_BYTES = 8192  # sizeof(Frame): canonical layout pads 4 KiB data + metadata to 8 KiB
-SLACK_MIB = 8
+SLACK_MIB = 4
 
 # bench_runner flags that may appear in the config
 FLAGS = {
@@ -242,20 +242,22 @@ def command(runner: Path, p: dict, data_dir: Path, json_out: Path, label: str) -
     return cmd
 
 
-def calibrate_base_rss(runner: Path, p: dict, data_dir: Path, tmp: Path, cache: dict) -> float:
-    key = (int(p["keys"]), int(p.get("value_size", 100)), p.get("pattern"))
+def calibrate_base_rss(runner: Path, p: dict, data_dir: Path, tmp: Path, cache: dict) -> tuple[float, float]:
+    """(steady anonymous RSS, peak RSS) of a tiny-pool run: the memory every config pays."""
+    key = (int(p["keys"]), int(p.get("value_size", 100)), int(p["ops"]), int(p.get("warmup_ops", 0)))
     if key in cache:
         return cache[key]
     q = dict(p)
-    q.update({"pool": TINY_POOL, "runs": 1, "ops": min(int(p["ops"]), 20000), "warmup_ops": 1000, "cache": "warm",
-              "durability": "off", "io_mode": "buffered"})
+    # Same op count as the job: per-op latency/op vectors are part of the steady footprint.
+    q.update({"pool": TINY_POOL, "runs": 1, "cache": "warm", "durability": "off", "io_mode": "buffered"})
     out = tmp / "calib.json"
     subprocess.run(command(runner, q, data_dir, out, "calibration"), check=True)
     # Peak (VmHWM), not the end-of-run RSS: the key index's hash table rehashes during
     # the load phase and briefly needs more memory than it holds afterwards.
-    base = json.loads(out.read_text())["runs"][0]["rss_peak_mib"]
+    r = json.loads(out.read_text())["runs"][0]
+    base = (r["rss_anon_mib"], r["rss_peak_mib"])
     cache[key] = base
-    log(f"  calibrated base peak RSS for keys={key[0]}: {base:.1f} MiB")
+    log(f"  calibrated base RSS for keys={key[0]}: anon {base[0]:.1f} MiB, peak {base[1]:.1f} MiB")
     return base
 
 
@@ -324,9 +326,15 @@ def main() -> int:
                     if not cg.available:
                         log(f"  SKIP (no cgroup): {label}")
                         continue
-                    base = calibrate_base_rss(runner, p, data_dir, tmp, calib)
-                    footprint = budget * FRAME_BYTES / PAGE if job["params"].get("budget_use") == "pool_capacity" else budget
-                    limit = base + footprint + SLACK_MIB
+                    anon, peak = calibrate_base_rss(runner, p, data_dir, tmp, calib)
+                    use = job["params"].get("budget_use", "pool")
+                    if use == "os":
+                        # Page cache is reclaimable, so no slack: everything above the process's
+                        # steady anonymous memory is the page-cache budget.
+                        limit = max(anon + budget, peak + 1)
+                    else:
+                        footprint = budget * FRAME_BYTES / PAGE if use == "pool_capacity" else budget
+                        limit = peak + footprint + SLACK_MIB  # slack only protects anon memory
                     json_out.unlink(missing_ok=True)
                     cg.set_limit_mib(limit)
                     cg.reset_peak()

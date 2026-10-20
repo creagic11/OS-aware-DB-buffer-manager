@@ -129,6 +129,27 @@ std::array<double, 4> read_rss_mib() {
     return r;
 }
 
+/// Page cache (MiB) charged to this process's memory cgroup (v1 "cache" / v2 "file");
+/// -1 when not in a dedicated cgroup. Measures the OS cache a run really had.
+double cgroup_page_cache_mib() {
+    std::ifstream cg("/proc/self/cgroup");
+    std::string line, path;
+    bool v1 = false;
+    while (std::getline(cg, line)) {
+        auto a = line.find(':'), b = line.find(':', a + 1);
+        std::string ctrl = line.substr(a + 1, b - a - 1), p = line.substr(b + 1);
+        if (ctrl.find("memory") != std::string::npos) { path = p; v1 = true; break; }
+        if (ctrl.empty() && path.empty()) path = p;
+    }
+    if (path.empty() || path == "/") return -1;
+    std::ifstream st((v1 ? "/sys/fs/cgroup/memory" : "/sys/fs/cgroup") + path + "/memory.stat");
+    std::string k;
+    uint64_t v;
+    while (st >> k >> v)
+        if (k == (v1 ? "cache" : "file")) return v / 1048576.0;
+    return -1;
+}
+
 /// Block-device counters from /sys/dev/block/MAJ:MIN/stat (same source as iostat).
 struct DevStat {
     bool ok = false;
@@ -216,6 +237,7 @@ RunOutput execute_run(const Options& opt, size_t run_idx, const WorkloadGenerato
         // LOAD (not measured): every key once, in key order. Durability is irrelevant
         // for the load, so it runs with the store's mode but is not timed.
         std::string val;
+        store.reserve_index(wl.key_space_size);  // no rehash transient: peak RSS == steady RSS
         for (uint32_t k = 0; k < wl.key_space_size; ++k) {
             gen.fill_value(UINT64_MAX - k, k, val);
             store.put(WorkloadGenerator::key_for(k), val);
@@ -268,6 +290,7 @@ RunOutput execute_run(const Options& opt, size_t run_idx, const WorkloadGenerato
         const Usage u1 = read_usage();
         const ProcIO io1 = read_proc_io();
         const DevStat d1 = read_dev(sysfs);
+        const double cg_cache = cgroup_page_cache_mib();
 
         auto& m = store.buffer_pool().metrics();
         auto& fst = store.file_manager().stats();
@@ -358,6 +381,7 @@ RunOutput execute_run(const Options& opt, size_t run_idx, const WorkloadGenerato
         add("rss_mib", rss[0]);
         add("rss_anon_mib", rss[1]);
         add("rss_peak_mib", rss[3]);  // process high-water mark (includes load phase)
+        add("cgroup_cache_mib", cg_cache);  // OS page cache held at the end of the measured loop
         // Device-level view of the measured window (iostat -x equivalents).
         add_s("dev", d1.ok ? d1.name : "n/a");
         const double ms = elapsed * 1000.0;

@@ -81,6 +81,9 @@ public:
 
     size_t size() const { return index_.size(); }
 
+    /// Pre-size the in-memory key index (avoids rehash memory spikes during bulk loads).
+    void reserve_index(size_t n) { index_.reserve(n); }
+
     FileManager& file_manager() { return fm_; }
     BufferPoolManager& buffer_pool() { return *bpm_; }
     LogManager* wal() { return wal_.get(); }

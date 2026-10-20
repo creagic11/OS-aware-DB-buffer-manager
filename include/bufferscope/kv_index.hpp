@@ -51,6 +51,10 @@ public:
         return index_.size();
     }
 
+    void reserve(size_t n) {
+        index_.reserve(n);
+    }
+
     void clear() {
         index_.clear();
     }
