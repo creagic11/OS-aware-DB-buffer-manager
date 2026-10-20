@@ -9,7 +9,10 @@
 #   mem_budget_mib  run inside a memory cgroup capped at (calibrated base RSS + budget);
 #                   with budget_use = "pool" the pool gets the whole budget (O_DIRECT),
 #                   with "os" the pool is tiny and the OS page cache gets the budget,
-#                   with "split" the pool gets half and the page cache the rest.
+#                   with "split" the pool gets half and the page cache the rest;
+#                   with "pool_capacity" the pool holds budget/4 KiB pages (same DATA
+#                   capacity as the page cache) and the cgroup allows its real 8 KiB/frame
+#                   footprint — isolates the replacement policy from the Frame layout cost.
 #
 # Configuration names used throughout the report:
 #   os     = buffered I/O + tiny pool (16 frames): the OS page cache does the caching
@@ -71,6 +74,7 @@ sweep = { var = "skew", values = [
 series = [
   { name = "pool (O_DIRECT)", io_mode = "direct", budget_use = "pool" },
   { name = "os (buffered, tiny pool)", io_mode = "buffered", budget_use = "os" },
+  { name = "pool, equal data capacity", io_mode = "direct", budget_use = "pool_capacity" },
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -122,6 +126,7 @@ sweep = { var = "mem_budget_mib", values = [8, 32, 64, 128, 256, 512] }
 series = [
   { name = "pool (O_DIRECT)", io_mode = "direct", budget_use = "pool" },
   { name = "os (buffered, tiny pool)", io_mode = "buffered", budget_use = "os" },
+  { name = "pool, equal data capacity", io_mode = "direct", budget_use = "pool_capacity" },
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────

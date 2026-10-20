@@ -203,6 +203,11 @@ def resolve(p: dict) -> tuple[dict, float | None]:
             p["pool"] = TINY_POOL
         elif use == "split":
             p["pool"] = max(2, int(budget * (1 << 20) / 2 / FRAME_BYTES))
+        elif use == "pool_capacity":
+            # Equal DATA capacity: as many 4 KiB pages as the page cache would get. The
+            # cgroup is sized for the real 8 KiB/frame footprint (see `limit` below), so
+            # this isolates the replacement policy from the Frame-layout memory overhead.
+            p["pool"] = max(2, int(budget * (1 << 20) / PAGE))
         else:  # "pool" (default): the whole budget, counted at real bytes per frame
             p["pool"] = max(2, int(budget * (1 << 20) / FRAME_BYTES))
         p.pop("pool_ratio", None)
@@ -320,7 +325,8 @@ def main() -> int:
                         log(f"  SKIP (no cgroup): {label}")
                         continue
                     base = calibrate_base_rss(runner, p, data_dir, tmp, calib)
-                    limit = base + budget + SLACK_MIB
+                    footprint = budget * FRAME_BYTES / PAGE if job["params"].get("budget_use") == "pool_capacity" else budget
+                    limit = base + footprint + SLACK_MIB
                     json_out.unlink(missing_ok=True)
                     cg.set_limit_mib(limit)
                     cg.reset_peak()
